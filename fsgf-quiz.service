@@ -1,0 +1,39 @@
+[Unit]
+Description=FSGF Quiz Bank - Radiology Technology Exam Prep
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/fsgf-quiz/server
+
+# ── 环境变量（生产环境必须修改！）──
+Environment=FSGF_PASSWORD=fsgf2026_prod
+Environment=FSGF_SECRET=CHANGE_ME_TO_A_RANDOM_64_CHAR_STRING
+Environment=FSGF_HOST=127.0.0.1
+EnvironmentFSGF_PORT=5000
+
+# ── Gunicorn 启动命令 ──
+ExecStart=/usr/local/bin/gunicorn \
+    --workers 2 \
+    --worker-class gevent \
+    --bind 127.0.0.1:5000 \
+    --access-logfile /opt/fsgf-quiz/logs/access.log \
+    --error-logfile /opt/fsgf-quiz/logs/error.log \
+    --log-level info \
+    --timeout 120 \
+    app:app
+
+Restart=always
+RestartSec=5
+
+# ── 安全限制 ──
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/fsgf-quiz/server /opt/fsgf-quiz/data /opt/fsgf-quiz/logs
+
+[Install]
+WantedBy=multi-user.target

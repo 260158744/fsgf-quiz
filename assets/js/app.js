@@ -1,0 +1,892 @@
+/* ===== 主应用 · 路由与视图 ===== */
+const App=(()=>{
+  const Q=window.QUESTIONS||[];
+  // 锁屏卡片原始模板（用户选择/管理员界面返回时恢复）
+  const LOCK_CARD_TMPL=`<div class="lock-logo">🩻</div>
+    <h1 class="lock-title">放射医学技术副高</h1>
+    <p class="lock-subtitle">智能备考题库 · 2000题</p>
+    <div class="lock-form">
+      <div class="lock-input-wrap">
+        <input type="password" id="lockPwdInput" placeholder="请输入访问密码" autocomplete="off" autofocus>
+        <button class="lock-toggle-pwd" id="lockTogglePwd" title="显示/隐藏密码"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      </div>
+      <div class="lock-hint" id="lockHint"></div>
+      <button class="btn btn-primary btn-block" id="lockBtn" style="margin-top:14px;height:44px;font-size:15px">解锁进入</button>
+    </div>
+    <p class="lock-footer">本站为个人备考工具，仅限授权用户访问</p>`;
+  // ===== 🔒 密码门禁（API优先 + 客户端降级） =====
+  const SHARE_CODE = new URLSearchParams(location.search).get('share');
+
+  // 客户端密码验证（离线/PWA模式降级用）
+  async function offlineVerify(pwd) {
+    // 默认密码: 123456 (salt+pwd SHA-256)
+    const EXPECTED = '39007183d0ded57fd27d7a3752e69106629d0d332b9eaa60a6c7dd13ec978f88';
+    // 明文兜底：兼容非 HTTPS / crypto.subtle 不可用环境
+    if (pwd === '123456') return true;
+    try {
+      if (!window.crypto || !crypto.subtle) return false;
+      const encoder = new TextEncoder();
+      const data = encoder.encode('fsgf_quiz_salt_v1' + pwd);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      return hashHex === EXPECTED;
+    } catch(e) { return false; }
+  }
+
+  function checkAuth(){
+    // URL参数免密: ?pwd=xxx 或 ?share=xxx&pwd=xxx
+    const urlPwd = new URLSearchParams(location.search).get('pwd');
+    if (urlPwd) {
+      return autoLogin(urlPwd);
+    }
+    // 恢复已有 token
+    if (API.restoreToken()) {
+      return API.checkSession().then(r => {
+        if (r.ok) { authenticated = true; return true; }
+        else { API.logout(); return false; }
+      }).catch(() => false);
+    }
+    // 检查是否有本地缓存的离线登录（按用户）
+    if (sessionStorage.getItem(User.sessionKey()) === '1') {
+      authenticated = true;
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(false);
+  }
+
+  async function autoLogin(password){
+    try {
+      const r = await API.login(password);
+      if (r.ok) { authenticated = true; return true; }
+    } catch(e) {}
+    // API 失败，尝试离线验证
+    if (await offlineVerify(password)) {
+      sessionStorage.setItem(User.sessionKey(), '1');
+      authenticated = true;
+      return true;
+    }
+    return false;
+  }
+
+  async function doAuth(pwd){
+    try {
+      const r = await API.login(pwd);
+      if (r.ok){ authenticated = true; return true; }
+      // API 返回错误，如果是密码错误就直接返回false
+      if (r && r.error && r.error.includes('密码')) return false;
+    } catch(e) {}
+    // API 不可达，尝试离线验证
+    if (await offlineVerify(pwd)) {
+      sessionStorage.setItem(User.sessionKey(), '1');
+      authenticated = true;
+      return true;
+    }
+    return false;
+  }
+  function unlockUI(){
+    authenticated=true;
+    // 确保存在当前用户档案（首次自动创建默认档案）
+    if(!User.current()){
+      const id=User.create('默认用户');
+      User.setCurrent(id);
+    }
+    const ls=document.getElementById('lockScreen');
+    ls.classList.add('unlocked');
+    ls.style.display='none';
+    document.querySelector('.layout').style.display='';
+    document.getElementById('quizOverlay').style.display='';
+    document.querySelector('.toast-wrap').style.display='';
+    initApp();
+  }
+  function showLock(){
+    document.querySelector('.layout').style.display='none';
+    document.getElementById('quizOverlay').style.display='none';
+    document.querySelector('.toast-wrap').style.display='none';
+    const ls=document.getElementById('lockScreen');
+    ls.style.display='flex';
+    ls.classList.remove('unlocked');
+
+    // 根据是否是分享链接调整界面
+    const isShare = !!SHARE_CODE;
+    const titleEl = ls.querySelector('.lock-title');
+    const subEl = ls.querySelector('.lock-subtitle');
+    const inputEl = document.getElementById('lockPwdInput');
+    const hintEl = document.getElementById('lockHint');
+
+    if (isShare) {
+      titleEl.textContent = '🔗 题库分享';
+      subEl.textContent = `分享码: ${SHARE_CODE} · 请输入访问密码`;
+      inputEl.placeholder = SHARE_CODE ? '请输入该分享的密码' : '请输入访问密码';
+    } else {
+      titleEl.textContent = '放射医学技术副高';
+      subEl.textContent = '智能备考题库 · 2000题';
+      inputEl.placeholder = '请输入访问密码';
+    }
+
+    const btn=document.getElementById('lockBtn');
+    const toggle=document.getElementById('lockTogglePwd');
+    const card=document.querySelector('.lock-card');
+
+    btn.onclick=async ()=>{
+      const v=inputEl.value.trim();
+      if(!v && !isShare){shake();hintEl.textContent='请输入密码';hintEl.classList.add('show');return}
+      hintEl.classList.remove('show');
+      btn.disabled=true;btn.textContent='验证中...';
+
+      try {
+        const ok = await doAuth(v);
+        if (ok) { showUserSelect(); }
+        else {
+          shake();hintEl.textContent=isShare?'分享码无效或密码错误':'密码错误，请重新输入';hintEl.classList.add('show');inputEl.value='';inputEl.focus();
+        }
+      } catch(e) {
+        shake();hintEl.textContent='网络错误，请重试';hintEl.classList.add('show');
+      }
+      btn.disabled=false;btn.textContent='解锁进入';
+    };
+    input.onkeydown=e=>{if(e.key==='Enter')btn.click()};
+    toggle.onclick=()=>{input.type=input.type==='password'?'text':'password'};
+    input.focus();
+
+    // 管理员入口（连续点击logo 5次）
+    let adminClicks = 0;
+    const logo = ls.querySelector('.lock-logo');
+    logo.onclick = () => {
+      adminClicks++;
+      if (adminClicks >= 5) {
+        adminClicks = 0;
+        showAdminLogin(ls);
+      }
+      setTimeout(() => { adminClicks = 0; }, 2000);
+    };
+  }
+
+  function showAdminLogin(lockScreen){
+    const card = lockScreen.querySelector('.lock-card');
+    const oldHTML = card.innerHTML;
+    card.innerHTML = `
+      <div class="lock-logo">🔐</div>
+      <h1 class="lock-title">管理员登录</h1>
+      <p class="lock-subtitle" style="font-size:11px;color:var(--danger)">管理面板 — 分享管理与数据统计</p>
+      <div class="lock-form">
+        <input type="text" id="adminUserInput" placeholder="用户名" style="width:100%;height:44px;border:2px solid var(--border-2);border-radius:12px;padding:0 14px;font-size:15px;background:var(--surface);color:var(--text);outline:none;margin-bottom:10px;box-sizing:border-box">
+        <div class="lock-input-wrap">
+          <input type="password" id="adminPwdInput" placeholder="管理员密码" autocomplete="off">
+          <button class="lock-toggle-pwd" title="显示/隐藏密码">👁</button>
+        </div>
+        <div class="lock-hint" id="adminHint"></div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-outline btn-block" id="adminBackBtn" style="flex:1;height:42px">← 返回</button>
+          <button class="btn btn-primary btn-block" id="adminLoginBtn" style="flex:2;height:42px">登录管理面板</button>
+        </div>
+      </div>
+    `;
+    const userIn = document.getElementById('adminUserInput');
+    const pwdIn = document.getElementById('adminPwdInput');
+    const loginBtn = document.getElementById('adminLoginBtn');
+    const backBtn = document.getElementById('adminBackBtn');
+    const hint = document.getElementById('adminHint');
+
+    loginBtn.onclick = async () => {
+      const u = userIn.value.trim(), p = pwdIn.value.trim();
+      if (!u || !p) { shake(); hint.textContent = '请输入用户名和密码'; hint.classList.add('show'); return; }
+      loginBtn.disabled = true; loginBtn.textContent = '登录中...';
+      const r = await API.adminLogin(u, p);
+      if (r.ok) { authenticated = true; unlockUI(); }
+      else { shake(); hint.textContent = r.error || '登录失败'; hint.classList.add('show'); }
+      loginBtn.disabled = false; loginBtn.textContent = '登录管理面板';
+    };
+    backBtn.onclick = () => { card.innerHTML = oldHTML; showLock(); };
+    pwdIn.onkeydown = e => { if (e.key === 'Enter') loginBtn.click(); };
+    userIn.focus();
+  }
+  function shake(){const c=document.querySelector('.lock-card');c.classList.remove('shake');void c.offsetWidth;c.classList.add('shake')}
+
+  // ===== 👤 用户选择/创建界面（多用户数据隔离） =====
+  function showUserSelect(){
+    const users=User.list();
+    const ls=document.getElementById('lockScreen');
+    const card=ls.querySelector('.lock-card');
+
+    // 首次使用（仅默认用户且从未自定义过）→ 自动进入，减少打扰
+    if(users.length===1 && users[0].id==='u1' && !localStorage.getItem('fsgf_user_created')){
+      localStorage.setItem('fsgf_user_created','1');
+      User.setCurrent('u1');
+      unlockUI();
+      return;
+    }
+
+    const rows=users.map((u,i)=>`
+      <button class="user-row" onclick="App.selectUser('${u.id}')">
+        <span class="user-avatar">${(u.name||'用').slice(0,1)}</span>
+        <span class="user-meta">
+          <b>${u.name}</b>
+          <small>${i===0?'默认档案':'个人档案'} · ${new Date(u.createdAt).toLocaleDateString()}创建</small>
+        </span>
+        <span class="user-arrow">›</span>
+      </button>`).join('');
+
+    card.innerHTML=`
+      <div class="lock-logo">👤</div>
+      <h1 class="lock-title">选择学习档案</h1>
+      <p class="lock-subtitle">多人共用本系统，每人数据完全独立</p>
+      <div class="user-list" style="margin:14px 0;max-height:260px;overflow-y:auto">
+        ${rows}
+      </div>
+      <div class="lock-form">
+        <div class="lock-input-wrap" style="margin-bottom:8px">
+          <input type="text" id="newUserName" placeholder="输入昵称，创建新档案（如：小李）" autocomplete="off" style="width:100%;height:44px;border:2px solid var(--border-2);border-radius:12px;padding:0 14px;font-size:14px;background:var(--surface);color:var(--text);outline:none;box-sizing:border-box">
+        </div>
+        <div class="lock-hint" id="userHint"></div>
+        <button class="btn btn-primary btn-block" id="createUserBtn" style="margin-top:6px;height:44px;font-size:15px">＋ 新建档案并进入</button>
+        <button class="btn btn-outline btn-block" id="userBackBtn" style="margin-top:8px;height:40px;font-size:13px">← 返回重新输入密码</button>
+      </div>`;
+
+    document.getElementById('createUserBtn').onclick=()=>{
+      const n=document.getElementById('newUserName').value.trim();
+      if(!n){shake();const h=document.getElementById('userHint');h.textContent='请输入昵称';h.classList.add('show');return}
+      const id=User.create(n);
+      User.setCurrent(id);
+      localStorage.setItem('fsgf_user_created','1');
+      unlockUI();
+    };
+    document.getElementById('userBackBtn').onclick=()=>{card.innerHTML=LOCK_CARD_TMPL;showLock()};
+    const input=document.getElementById('newUserName');
+    input.onkeydown=e=>{if(e.key==='Enter')document.getElementById('createUserBtn').click()};
+    input.focus();
+  }
+  function selectUser(id){
+    if(User.switchTo(id)){
+      localStorage.setItem('fsgf_user_created','1');
+      unlockUI();
+    }
+  }
+
+  const UNITS=[
+    ['一','人体断面影像解剖','专业知识'],['二','医学物理基础','专业知识'],
+    ['三','医学影像设备与成像原理','专业知识'],['四','对比剂','专业知识'],
+    ['五','影像质量管理','专业知识'],['六','数字X线成像基础','专业知识'],
+    ['七','影像诊断学基础','专业实践能力'],['八','普通X线检查技术','专业实践能力'],
+    ['九','CT检查技术','专业实践能力'],['十','MR检查技术','专业实践能力'],
+    ['十一','DSA检查技术','专业实践能力'],
+    ['十二','PACS技术','学科新进展'],['十三','图像打印技术','学科新进展'],
+    ['十四','数字X线技术进展','学科新进展'],['十五','DSA技术进展','学科新进展'],
+    ['十六','CT技术进展','学科新进展'],['十七','MR技术进展','学科新进展']
+  ];
+  const WEIGHTS={'专业知识':0.3,'专业实践能力':0.5,'学科新进展':0.2};
+  let view='dashboard';
+
+  async function init(){
+    // 🚪 密码门禁已移除：打开即进入（数据仍按用户档案隔离）
+    unlockUI();
+  }
+  function initApp(){
+    // 隐藏加载屏
+    const ls=document.getElementById('loadingScreen');
+    if(ls){ls.classList.add('done');setTimeout(()=>{if(ls.parentNode)ls.parentNode.removeChild(ls)},400);}
+    // 主题
+    const s=DB.getSettings();
+    document.documentElement.dataset.theme=s.theme;
+    document.getElementById('themeToggle').textContent=s.theme==='dark'?'☀️':'🌙';
+    // 打卡
+    if(DB.checkin()){toast('📅 已打卡，连续 '+DB.getStreak()+' 天')}
+    // 导航
+    document.querySelectorAll('.nav-item').forEach(n=>n.onclick=()=>{go(n.dataset.view)});
+    // 移动端底部Tab导航
+    document.querySelectorAll('.mtab').forEach(t=>t.onclick=()=>{go(t.dataset.view)});
+    document.getElementById('navToggle').onclick=()=>{
+      const sb=document.getElementById('sidebar');
+      const isOpen=sb.classList.toggle('open');
+      // 动态管理遮罩层（移动端侧边栏打开时显示）
+      if(window.innerWidth<=760){
+        let ov=document.getElementById('sidebarOverlay');
+        if(!ov){
+          ov=document.createElement('div');
+          ov.id='sidebarOverlay';
+          ov.className='sidebar-overlay';
+          document.body.appendChild(ov);
+          ov.onclick=()=>{sb.classList.remove('open');ov.classList.remove('show');};
+        }
+        if(isOpen){setTimeout(()=>ov.classList.add('show'),10);}
+        else{ov.classList.remove('show');}
+      }
+    };
+    document.getElementById('themeToggle').onclick=toggleTheme;
+    document.getElementById('quizExit').onclick=()=>Quiz.exit();
+    render();
+  }
+  function go(v){
+    view=v;
+    // 同步侧边栏高亮
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===v));
+    // 同步移动端底部Tab高亮
+    document.querySelectorAll('.mtab').forEach(t=>t.classList.toggle('active',t.dataset.view===v));
+    // 关闭移动端抽屉
+    document.getElementById('sidebar').classList.remove('open');
+    const ov=document.getElementById('sidebarOverlay');
+    if(ov) ov.classList.remove('show');
+    render();
+  }
+  function toggleTheme(){const s=DB.getSettings();const nv=s.theme==='light'?'dark':'light';DB.setSetting('theme',nv);document.documentElement.dataset.theme=nv;document.getElementById('themeToggle').textContent=nv==='dark'?'☀️':'🌙';render()}
+  function toast(msg){const w=document.getElementById('toastWrap');const t=document.createElement('div');t.className='toast';t.textContent=msg;w.appendChild(t);setTimeout(()=>t.remove(),2500)}
+
+  function render(){
+    updateTopbar();updateLevelCard();updateBadges();
+    const main=document.getElementById('main');
+    const V={
+      dashboard:renderDash,map:renderMap,practice:renderPractice,
+      plan:renderPlan,lectures:renderLectures,wrong:renderWrong,review:renderReview,
+      reports:renderReports,badges:renderBadges,settings:renderSettings
+    };
+    main.innerHTML=(V[view]||renderDash)();
+    // 绑定动态事件
+    bindEvents();
+  }
+  function updateTopbar(){
+    const recs=DB.getRecords();const correct=recs.filter(r=>r.ok).length;
+    const wrong=Object.values(DB.getWrong()).filter(w=>!w.mastered).length;
+    const review=DB.getReview().length;
+    document.getElementById('topbarStats').innerHTML=`
+      <div class="tstat"><b>${recs.length}</b><span>已答题</span></div>
+      <div class="tstat"><b>${recs.length?Math.round(correct/recs.length*100):0}%</b><span>正确率</span></div>
+      <div class="tstat"><b>${DB.getXP()}</b><span>XP</span></div>
+      <div class="tstat"><b>${DB.getStreak()}</b><span>连续天</span></div>`;
+    document.getElementById('wrongCount').textContent=wrong||'';
+    document.getElementById('reviewCount').textContent=review||'';
+  }
+  function updateLevelCard(){
+    const lv=Gamify.level(DB.getXP());
+    document.getElementById('levelCard').innerHTML=`
+      <div class="lv-name">${lv.display} <span style="font-size:11px">${DB.getXP()} XP</span></div>
+      <div class="lv-bar"><div class="lv-bar-fill" style="width:${lv.progress}%"></div></div>
+      <div class="lv-xp">${lv.xpNext?`距下一段位 ${lv.xpNext-DB.getXP()} XP`:'已达最高段位'}</div>`;
+  }
+  function updateBadges(){
+    // 在勋章视图渲染时处理
+  }
+
+  // ===== 仪表盘 =====
+  function renderDash(){
+    const recs=DB.getRecords();const correct=recs.filter(r=>r.ok).length;
+    const daily=DB.getDaily();const dpct=daily.target?Math.min(100,Math.round(daily.done/daily.target*100)):0;
+    const wrong=Object.values(DB.getWrong()).filter(w=>!w.mastered).length;
+    const review=DB.getReview().length;
+    const ab=DB.getAbility();let weakN=0;for(const k in ab){if(ab[k].attempts>=3&&ab[k].score<40)weakN++}
+    const days=examCountdown();
+    const doneSet=new Set(recs.map(r=>r.qid)).size;
+    return `
+    <div class="dash-hero">
+      <h2>👋 欢迎备考，${DB.getStreak()>0?'已坚持 '+DB.getStreak()+' 天':'今天开始第一题'}</h2>
+      <p class="hero-sub">放射医学技术（副高级）· 依据官方考纲编制 · 共 ${Q.length} 题</p>
+      ${days?`<div class="countdown-bar ${days<=30?'urgent':''}">📅 距考试还有 <b>${days}</b> 天 · 已刷 ${doneSet}/${Q.length} 题 (${Math.round(doneSet/Q.length*100)}%) · 每天约需 ${Math.ceil((Q.length-doneSet)/Math.max(1,days))} 题</div>`:''}
+      <div class="hero-row">
+        <div class="daily-ring">
+          <svg class="ring-svg" viewBox="0 0 60 60">
+            <circle class="ring-bg" cx="30" cy="30" r="25"/>
+            <circle class="ring-fg" cx="30" cy="30" r="25" stroke-dasharray="${dpct*1.57} 157"/>
+          </svg>
+          <div><div class="ring-txt">${daily.done}/${daily.target}</div><div style="font-size:11px;opacity:.85">今日目标</div></div>
+        </div>
+        <div><div class="hr-val">${recs.length}</div><div class="hr-label">累计答题</div></div>
+        <div><div class="hr-val">${recs.length?Math.round(correct/recs.length*100):0}%</div><div class="hr-label">总正确率</div></div>
+        <div><div class="hr-val">${Gamify.level(DB.getXP()).display}</div><div class="hr-label">当前段位</div></div>
+      </div>
+    </div>
+    <div class="section-title">🎯 选择练习模式</div>
+    <div class="mode-grid">
+      <div class="mode-card" onclick="Quiz.start('free',{count:10})"><span class="mode-ico">✍️</span><h3>自由刷题</h3><p>自适应选题，瞄准学习区，10题一组</p></div>
+      <div class="mode-card" onclick="Quiz.start('weak',{count:10})"><span class="mode-ico">🎯</span><h3>薄弱强化</h3><p>优先推送你得分最低的知识点</p></div>
+      <div class="mode-card" onclick="Quiz.start('exam',{count:50})"><span class="mode-ico">📋</span><h3>全真模考</h3><p>50题·按大纲权重分布·难度3:5:2</p></div>
+      <div class="mode-card" onclick="Quiz.start('memorize',{count:10})"><span class="mode-ico">📖</span><h3>背题模式</h3><p>从错题本抽取，边答边记</p></div>
+    </div>
+    <div class="grid grid-4" style="margin-top:18px">
+      <div class="stat-card danger"><span class="sc-icon">📕</span><div class="sc-val">${wrong}</div><div class="sc-label">待攻克错题</div></div>
+      <div class="stat-card warn"><span class="sc-icon">🔁</span><div class="sc-val">${review}</div><div class="sc-label">今日待复习</div></div>
+      <div class="stat-card"><span class="sc-icon">⚠️</span><div class="sc-val">${weakN}</div><div class="sc-label">严重薄弱点</div></div>
+      <div class="stat-card success"><span class="sc-icon">🏅</span><div class="sc-val">${DB.getBadges().length}</div><div class="sc-label">已获勋章</div></div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h3 style="margin-bottom:10px">📈 快速入口</h3>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="App.go('plan')">🗓️ 备考计划</button>
+        <button class="btn btn-outline btn-sm" onclick="App.go('map')">查看知识地图</button>
+        <button class="btn btn-outline btn-sm" onclick="App.go('reports')">学情报告</button>
+        <button class="btn btn-outline btn-sm" onclick="Quiz.start('review',{count:20})">${review>0?'开始今日复习':'暂无待复习'}</button>
+        <button class="btn btn-outline btn-sm" onclick="App.go('wrong')">错题本(${wrong})</button>
+      </div>
+    </div>`;
+  }
+
+  // ===== 知识地图 =====
+  function renderMap(){
+    const ab=DB.getAbility();const recs=DB.getRecords();
+    const byUnit={};for(const r of recs){byUnit[r.u]=byUnit[r.u]||{t:0,c:0};byUnit[r.u].t++;if(r.ok)byUnit[r.u].c++}
+    const modules={'专业知识':[],'专业实践能力':[],'学科新进展':[]};
+    for(const[u,name,mod]of UNITS){
+      const qcount=Q.filter(q=>q.u===u).length;
+      const st=byUnit[u]||{t:0,c:0};
+      const acc=st.t?Math.round(st.c/st.t*100):null;
+      // 单元平均能力分
+      let ascore=0,an=0;for(const c of['记忆','理解','应用','分析']){const a=ab[u+'|'+c];if(a&&a.attempts>0){ascore+=a.score;an++}}
+      ascore=an?ascore/an:0;
+      modules[mod].push({u,name,qcount,st,acc,ascore});
+    }
+    let html=`<div class="page-head"><h1>🗺️ 知识地图</h1><p>共17个单元·${Q.length}题·按大纲三大模块组织，点击单元进入专项练习</p></div>`;
+    for(const[mod,arr]of Object.entries(modules)){
+      html+=`<div class="module-section"><div class="module-title">${modName(mod)}<span class="module-weight">大纲权重 ${WEIGHTS[mod]*100}%</span></div>`;
+    for(const u of arr){
+      const accColor=u.acc===null?'var(--text-3)':u.acc>=80?'var(--success)':u.acc>=60?'var(--warn)':'var(--danger)';
+      const asColor=u.ascore>=60?'var(--success)':u.ascore>=40?'var(--warn)':'var(--danger)';
+      const donePct=Math.round(u.st.t/u.qcount*100);
+      const doneColor=u.st.t>=u.qcount?'var(--success)':u.st.t>0?'var(--primary)':'var(--text-3)';
+      html+=`<div class="unit-row" onclick="Quiz.start('free',{unit:'${u.u}',count:10})">
+        <div class="unit-num">${u.u}</div>
+        <div class="unit-info"><div class="ui-name">${u.name}</div><div class="ui-meta">${u.qcount} 题 · 已做 ${u.st.t} (${donePct}%)${u.acc!==null?` · 正确率 ${u.acc}%`:''}</div></div>
+        <div class="unit-acc">
+          ${u.ascore>0?`<div style="font-size:11px;color:var(--text-3)">能力</div><div class="acc-txt" style="color:${asColor}">${Math.round(u.ascore)}</div>`:''}
+          <div class="acc-bar" style="width:70px;margin-top:3px"><div class="acc-bar-fill" style="width:${donePct}%;background:${doneColor}"></div></div>
+          <span class="unit-quiz-btn">练习</span>
+        </div>
+      </div>`;
+    }
+      html+=`</div>`;
+    }
+    html+=`<div class="card"><h3 style="margin-bottom:8px">📌 重点难点提示</h3><div class="detail-list">
+      <b>高频高分模块</b>：单元九（CT）、单元十（MR）题量最大（各110题），权重50%的专业实践能力核心。<br>
+      <b>易错高发区</b>：MRI信号演变、序列参数权衡(SNR/时间/分辨率)、对比剂不良反应处理、X线摄影体位角度、CT值与窗宽窗位计算。<br>
+      <b>记忆密集区</b>：断面解剖、PACS/DICOM标准、图像打印技术——多用"背题模式"。<br>
+      <b>分析应用区</b>：案例分析题集中在各部位检查技术方案设计——建议扎实自由刷题后再挑战模考。
+    </div></div>`;
+    return html;
+  }
+  function modName(m){return {'专业知识':'📚 专业知识','专业实践能力':'🛠️ 专业实践能力','学科新进展':'🚀 学科新进展'}[m]}
+
+  // ===== 练习选择 =====
+  function renderPractice(){
+    return `<div class="page-head"><h1>✍️ 开始刷题</h1><p>选择练习模式与筛选条件</p></div>
+    <div class="mode-grid">
+      <div class="mode-card" onclick="Quiz.start('free',{count:10})"><span class="mode-ico">✍️</span><h3>自由刷题</h3><p>10题·自适应·学习区优先</p></div>
+      <div class="mode-card" onclick="Quiz.start('weak',{count:10})"><span class="mode-ico">🎯</span><h3>薄弱强化</h3><p>10题·针对薄弱单元</p></div>
+      <div class="mode-card" onclick="Quiz.start('exam',{count:50})"><span class="mode-ico">📋</span><h3>全真模考</h3><p>50题·模拟真实考试</p></div>
+      <div class="mode-card" onclick="Quiz.start('memorize',{count:10})"><span class="mode-ico">📖</span><h3>背题模式</h3><p>10题·从错题本抽取</p></div>
+    </div>
+    <div class="section-title">按单元专项练习</div>
+    <div class="grid grid-3">
+      ${UNITS.map(([u,name,mod])=>`<div class="unit-row" onclick="Quiz.start('free',{unit:'${u}',count:10})"><div class="unit-num">${u}</div><div class="unit-info"><div class="ui-name">${name}</div><div class="ui-meta">${Q.filter(q=>q.u===u).length}题 · ${mod}</div></div><span class="unit-quiz-btn">练习</span></div>`).join('')}
+    </div>`;
+  }
+
+  // ===== 智能备考计划 =====
+  function examCountdown(){
+    const d=DB.getSettings().examDate;
+    if(!d) return null;
+    const days=Math.ceil((new Date(d+'T23:59:59')-Date.now())/86400000);
+    return days;
+  }
+  function renderPlan(){
+    const s=DB.getSettings();
+    const days=examCountdown();
+    const recs=DB.getRecords();
+    const total=Q.length;
+    const done=new Set(recs.map(r=>r.qid)).size;
+    const wrong=Object.values(DB.getWrong()).filter(w=>!w.mastered).length;
+    const review=DB.getReview().length;
+    const daily=DB.getDaily();
+    // 单元覆盖情况
+    const byUnit={};for(const r of recs){byUnit[r.u]=byUnit[r.u]||new Set();byUnit[r.u].add(r.qid)}
+    const unitCover=UNITS.map(([u,name,mod])=>{
+      const cnt=Q.filter(q=>q.u===u).length;
+      const dset=byUnit[u]||new Set();
+      return {u,name,mod,cnt,done:Math.min(cnt,dset.size)};
+    });
+
+    let html=`<div class="page-head"><h1>🗓️ 智能备考计划</h1><p>以考试日期倒排复习节奏，每日推荐学习任务</p></div>`;
+
+    // 未设置考试日期 → 引导
+    if(!days){
+      html+=`<div class="card" style="background:var(--primary-l);border-color:var(--primary);text-align:center;padding:28px">
+        <div style="font-size:40px;margin-bottom:10px">📅</div>
+        <h3 style="margin-bottom:8px">还没有设置考试日期</h3>
+        <p class="muted" style="font-size:13px;margin-bottom:14px">设置后系统会根据剩余天数自动生成每日复习计划</p>
+        <button class="btn btn-primary" onclick="App.go('settings')">去设置考试日期 →</button>
+      </div>`;
+    }else{
+      const urgent=days<=30;
+      const weekly = Math.max(10, Math.round((total-done)/Math.max(1,days/7)));
+      html+=`<div class="grid grid-3">
+        <div class="stat-card ${urgent?'danger':''}"><div class="sc-val">${days}</div><div class="sc-label">距考试（天）</div><div class="sc-sub" style="color:${urgent?'var(--danger)':'var(--warn)'};font-size:12px">${urgent?'⚠️ 时间紧张，建议每天 ≥ ${weekly} 题':'节奏适中，每周约 ${weekly} 题'}</div></div>
+        <div class="stat-card"><div class="sc-val">${done}<span style="font-size:14px;color:var(--text-3)">/${total}</span></div><div class="sc-label">已刷题数</div><div class="sc-sub" style="font-size:12px;color:var(--text-2)">${Math.round(done/total*100)}% 覆盖</div></div>
+        <div class="stat-card"><div class="sc-val">${daily.done}<span style="font-size:14px;color:var(--text-3)">/${daily.target}</span></div><div class="sc-label">今日已完成</div><div class="sc-sub" style="font-size:12px;color:var(--text-2)">目标 ${daily.target} 题 · 继续加油</div></div>
+      </div>`;
+      // 今日建议卡片
+      const weak=Report.weakList().slice(0,3);
+      const hasReview=review>0;
+      html+=`<div class="card" style="margin-top:16px;background:var(--primary-l);border-color:var(--primary)">
+        <h3 style="margin-bottom:10px">🎯 今日建议（自动生成）</h3>
+        <div class="detail-list" style="font-size:13px;line-height:2">
+          ${hasReview?`<b>1️⃣ 先复习</b>：今日 ${review} 题待复习，先做「复习计划」巩固记忆<br>`:`<b>1️⃣ 今日无复习任务</b>，可以直接开始新题<br>`}
+          ${weak.length?`<b>2️⃣ 主攻薄弱</b>：${weak.map(w=>{const u=UNITS.find(x=>x[0]===w.u);return `「${u?u[1]:w.u}·${w.c}」`}).join('、')} 正确率偏低，建议「薄弱强化」<br>`:'<b>2️⃣ 暂无明显薄弱点</b>，继续刷题积累<br>'}
+          <b>3️⃣ 查漏补缺</b>：还有 ${total-done} 题未刷，剩余 ${days} 天平均每天需 ${Math.ceil((total-done)/Math.max(1,days))} 题
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          ${hasReview?`<button class="btn btn-primary btn-sm" onclick="Quiz.start('review',{count:20})">🔁 开始今日复习</button>`:''}
+          ${weak.length?`<button class="btn btn-outline btn-sm" onclick="Quiz.start('weak',{count:15})">🎯 薄弱强化</button>`:''}
+          <button class="btn btn-outline btn-sm" onclick="Quiz.start('free',{count:10})">✍️ 自由刷题</button>
+        </div>
+      </div>`;
+    }
+
+    // 单元覆盖进度
+    html+=`<div class="section-title">单元覆盖进度</div>`;
+    html+=`<div class="card">`;
+    for(const u of unitCover){
+      const pct=Math.round(u.done/u.cnt*100);
+      const col=pct===100?'var(--success)':pct>=60?'var(--primary)':pct>0?'var(--warn)':'var(--text-3)';
+      html+=`<div class="unit-row" onclick="Quiz.start('free',{unit:'${u.u}',count:10})">
+        <div class="unit-num">${u.u}</div>
+        <div class="unit-info"><div class="ui-name">${u.name}</div><div class="ui-meta">${u.done}/${u.cnt} 题 · ${u.mod}</div></div>
+        <div class="unit-acc">
+          <div class="acc-bar" style="width:90px"><div class="acc-bar-fill" style="width:${pct}%;background:${col}"></div></div>
+          <span style="font-size:12px;color:${col};font-weight:500">${pct}%</span>
+        </div>
+      </div>`;
+    }
+    html+=`</div>`;
+    html+=`<div class="card" style="margin-top:14px"><div class="detail-list" style="font-size:12px">
+      <b>📌 计划说明</b>：覆盖全部17单元后再反复刷薄弱单元；专业实践能力（单元七~十一）权重50%，投入时间建议占比一半；案例分析题多练综合推理。
+    </div></div>`;
+    return html;
+  }
+
+  // ===== 重点讲义 =====
+  let lectureFocus='一';
+  function renderLectures(){
+    const L=window.LECTURES||{};
+    const meta=UNITS.find(u=>u[0]===lectureFocus);
+    let html=`<div class="page-head"><h1>📚 重点讲义</h1><p>17单元精编讲义 · 与题目考点一一对应 · 刷题时可同步查阅</p></div>`;
+    html+=`<div class="lecture-tabs">${UNITS.map(([u,name])=>`<button class="filter-chip ${lectureFocus===u?'active':''}" onclick="App.openLecture('${u}')">${u}</button>`).join('')}</div>`;
+    const lec=L[lectureFocus];
+    if(!lec){
+      html+=`<div class="empty-state"><div class="es-ico">📖</div><p>该单元讲义正在编制中</p></div>`;
+      return html;
+    }
+    html+=`<div class="card" style="background:var(--primary-l);border-color:var(--primary)">
+      <h3 style="margin-bottom:6px">${lec.title||(meta?meta[1]:lectureFocus)}</h3>
+      <div class="muted" style="font-size:12px">${lec.module||''}${lec.weight?` · 大纲权重 ${lec.weight}%`:''}</div>
+      ${lec.overview?`<p style="font-size:13px;margin-top:8px;color:var(--text-2)">${lec.overview}</p>`:''}
+    </div>`;
+    for(const sec of (lec.sections||[])){
+      html+=`<div class="card lecture-sec"><h3>${sec.h}</h3><div class="lecture-body">${sec.content}</div></div>`;
+    }
+    if(lec.other){html+=`<div class="card lecture-sec"><h3>📌 其他提示</h3><div class="lecture-body">${lec.other}</div></div>`}
+    return html;
+  }
+  function openLecture(u){lectureFocus=u;go('lectures')}
+
+  // ===== 错题本 =====
+  let wrongFilter='all';
+  function renderWrong(){
+    const wrong=DB.getWrong();const arr=Object.entries(wrong).filter(([k,w])=>!w.mastered);
+    const filt=arr.filter(([id,w])=>{
+      if(wrongFilter==='all')return true;
+      const q=Q.find(x=>x.id===id);if(!q)return false;
+      if(wrongFilter==='hard')return q.d==='难';
+      if(wrongFilter==='case')return q.t==='案例分析题'||q.t==='共用题干题';
+      return q.u===wrongFilter;
+    });
+    let html=`<div class="page-head"><h1>📕 错题本</h1><p>共 ${arr.length} 道待攻克错题·支持筛选与导出</p></div>`;
+    html+=`<div class="list-toolbar">
+      <button class="btn btn-outline btn-sm" onclick="App.exportWrong()">⬇️ 导出错题</button>
+      <button class="btn btn-ghost btn-sm" onclick="Quiz.start('memorize',{count:20})">📖 背题模式复习</button>
+      <span style="flex:1"></span>
+      <button class="filter-chip ${wrongFilter==='all'?'active':''}" onclick="App.setWrongFilter('all')">全部</button>
+      <button class="filter-chip ${wrongFilter==='hard'?'active':''}" onclick="App.setWrongFilter('hard')">仅难题</button>
+      <button class="filter-chip ${wrongFilter==='case'?'active':''}" onclick="App.setWrongFilter('case')">仅案例</button>
+    </div>`;
+    if(!filt.length){html+=`<div class="empty-state"><div class="es-ico">🎉</div><p>暂无错题，继续保持！</p></div>`;return html}
+    filt.sort((a,b)=>b[1].count-a[1].count);
+    for(const[id,w]of filt.slice(0,50)){
+      const q=Q.find(x=>x.id===id);if(!q)continue;
+      const dmap={'易':'tag-easy','中':'tag-mid','难':'tag-hard'};
+      html+=`<div class="qitem" onclick="App.previewQuestion('${id}')">
+        <div class="qitem-head">
+          <div class="qitem-stem">${esc(q.s)}</div>
+          <span class="qitem-wrong-count">×${w.count}</span>
+        </div>
+        <div class="qitem-meta"><span class="tag tag-type">${q.t}</span><span class="tag ${dmap[q.d]}">${q.d}</span><span class="tag tag-cog">${q.c}</span><span>${q.un}</span><span>· 掌握度 ${Math.round(w.mastery*100)}%</span></div>
+        <div class="qitem-actions"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();App.previewQuestion('${id}')">查看解析</button><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();App.markMastered('${id}')">标记已掌握</button></div>
+      </div>`;
+    }
+    return html;
+  }
+  // ===== 复习计划 =====
+  function renderReview(){
+    const reviewIds=DB.getReview();
+    const wrong=DB.getWrong();
+    let html=`<div class="page-head"><h1>🔁 复习计划</h1><p>基于艾宾浩斯遗忘曲线·间隔1/2/4/7/15/30天·连续答对5次即掌握</p></div>`;
+    if(!reviewIds.length){html+=`<div class="empty-state"><div class="es-ico">✅</div><p>今日无待复习题目</p><button class="btn btn-primary" style="margin-top:14px" onclick="Quiz.start('free',{count:10})">去刷新题</button></div>`;return html}
+    html+=`<div class="card" style="background:var(--primary-l);border-color:var(--primary)"><div style="display:flex;align-items:center;gap:12px"><div style="font-size:32px">⏰</div><div><div style="font-weight:700;color:var(--primary)">今日待复习 ${reviewIds.length} 题</div><div class="muted" style="font-size:12px">在最佳记忆时机复习，效率最高</div></div><button class="btn btn-primary" style="margin-left:auto" onclick="Quiz.start('review',{count:20})">开始复习</button></div></div>`;
+    html+=`<div class="section-title">待复习题目</div>`;
+    for(const id of reviewIds.slice(0,30)){
+      const q=Q.find(x=>x.id===id);if(!q)continue;const w=wrong[id];
+      html+=`<div class="qitem" onclick="App.previewQuestion('${id}')"><div class="qitem-head"><div class="qitem-stem">${esc(q.s)}</div><span class="qitem-wrong-count">×${w?.count||1}</span></div><div class="qitem-meta"><span class="tag tag-cog">${q.c}</span><span>${q.un}</span><span>· 掌握度 ${Math.round((w?.mastery||0)*100)}%</span></div></div>`;
+    }
+    return html;
+  }
+
+  // ===== 报告 =====
+  function renderReports(){
+    const radar=Report.radarSVG();const growth=Report.growthSVG();const cog=Report.cogStats();const top=Report.topWrong(8);const weak=Report.weakList();
+    let html=`<div class="page-head"><h1>📈 学情报告</h1><p>能力雷达图·成长曲线·认知维度·高频错题·薄弱点</p></div>`;
+    html+=`<div class="report-section"><h3>🎯 能力雷达图</h3><div class="card"><div class="radar-wrap">${radar.svg}<div class="radar-legend">`;
+    for(const d of radar.data){
+      const c=d.score<40?'var(--danger)':d.score<60?'var(--warn)':'var(--success)';
+      html+=`<div class="legend-row"><span class="legend-dot" style="background:${c}"></span><span class="legend-name">${d.u} ${d.name}</span><span class="legend-val" style="color:${c}">${d.hasData?Math.round(d.score):'—'}</span></div>`;
+    }
+    html+=`</div></div></div></div>`;
+    html+=`<div class="report-section"><h3>📊 成长曲线（近30天正确率）</h3><div class="card"><div class="chart-wrap">${growth.svg}</div>${growth.avg7?`<div style="text-align:center;margin-top:8px;color:var(--text-2);font-size:13px">近7天平均正确率 <b style="color:var(--primary);font-size:16px">${growth.avg7}%</b></div>`:''}</div></div>`;
+    html+=`<div class="report-section"><h3>🧠 认知维度分析</h3><div class="card"><div class="grid grid-4">`;
+    for(const c of cog){
+      const col=c.acc>=80?'var(--success)':c.acc>=60?'var(--warn)':'var(--danger)';
+      html+=`<div class="stat-card"><div class="sc-val" style="color:${col}">${c.acc}%</div><div class="sc-label">${c.c}</div><div class="sc-sub">${c.correct}/${c.total}</div></div>`;
+    }
+    html+=`</div><p class="muted" style="font-size:12px;margin-top:10px">提示：记忆→理解→应用→分析，认知层次越高越难。分析维度薄弱说明综合推理能力需加强。</p></div></div>`;
+    if(weak.length){html+=`<div class="report-section"><h3>⚠️ 薄弱点TOP</h3><div class="card"><div class="weak-list">`;
+    for(const w of weak){const u=UNITS.find(x=>x[0]===w.u);const sev=w.score<40?'severe':'warn';html+=`<div class="weak-item ${sev}"><span class="muted" style="font-size:12px;width:24px">${w.u}</span><span class="wi-name">${u?u[1]:''} · ${w.c}</span><span class="wi-score">${Math.round(w.score)}</span></div>`}
+    html+=`</div><button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="Quiz.start('weak',{count:15})">🎯 针对薄弱点练习</button></div></div>`}
+    if(top.length){html+=`<div class="report-section"><h3>📕 高频错题TOP</h3><div class="card">`;
+    for(const t of top){html+=`<div class="qitem" onclick="App.previewQuestion('${t.q.id}')"><div class="qitem-head"><div class="qitem-stem">${esc(t.q.s)}</div><span class="qitem-wrong-count">×${t.w.count}</span></div><div class="qitem-meta"><span class="tag tag-cog">${t.q.c}</span><span>${t.q.un}</span></div></div>`}
+    html+=`</div></div>`}
+    return html;
+  }
+
+  // ===== 勋章墙 =====
+  function renderBadges(){
+    const earned=DB.getBadges();
+    let html=`<div class="page-head"><h1>🏅 勋章墙</h1><p>已获得 ${earned.length} / ${Gamify.BADGES.length} 枚勋章</p></div>`;
+    html+=`<div class="badge-grid">`;
+    for(const b of Gamify.BADGES){
+      const got=earned.includes(b.code);
+      html+=`<div class="badge-tile ${got?'earned':'locked'}"><div class="bt-ico">${b.ico}</div><div class="bt-name">${b.name}</div><div class="bt-desc">${b.desc}</div>${got?'<div class="bt-check">✓</div>':''}<div style="font-size:10px;color:var(--accent);margin-top:4px">+${b.xp} XP</div></div>`;
+    }
+    return html+`</div>`;
+  }
+
+  // ===== 设置 =====
+  function renderSettings(){
+    const s=DB.getSettings();
+    return `<div class="page-head"><h1>⚙️ 设置</h1><p>个性化与数据管理</p></div>
+    <div class="card">
+      <h3 style="margin-bottom:12px">外观</h3>
+      <div class="setting-row"><div class="sr-info"><h4>夜间模式</h4><p>深色主题，护眼</p></div><div class="toggle ${s.theme==='dark'?'on':''}" onclick="App.toggleTheme()"></div></div>
+      <div class="setting-row"><div class="sr-info"><h4>每日目标</h4><p>每天计划答题数</p></div><div><input type="number" min="5" max="100" value="${s.dailyTarget}" style="width:70px;padding:6px;border:1px solid var(--border-2);border-radius:6px;background:var(--surface);color:var(--text)" onchange="App.setDailyTarget(this.value)"> 题</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px">🎯 学习设置</h3>
+      <div class="setting-row"><div class="sr-info"><h4>考试日期</h4><p>设置后仪表盘显示倒计时，自动生成备考计划</p></div><div><input type="date" value="${s.examDate||''}" style="padding:6px;border:1px solid var(--border-2);border-radius:6px;background:var(--surface);color:var(--text)" onchange="App.setExamDate(this.value)"></div></div>
+      <div class="setting-row"><div class="sr-info"><h4>自动下一题</h4><p>提交答案后自动跳转下一题，刷题更快</p></div><div class="toggle ${s.autoNext?'on':''}" onclick="App.toggleAutoNext()"></div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px">数据管理</h3>
+      <div class="setting-row"><div class="sr-info"><h4>导出全部数据</h4><p>导出答题记录、错题本、能力图谱（JSON）</p></div><button class="btn btn-outline btn-sm" onclick="App.exportData()">导出</button></div>
+      <div class="setting-row"><div class="sr-info"><h4>导入数据</h4><p>从备份文件恢复</p></div><button class="btn btn-outline btn-sm" onclick="App.importData()">导入</button></div>
+      <div class="setting-row"><div class="sr-info"><h4>导出错题本</h4><p>导出为可打印的复习资料</p></div><button class="btn btn-outline btn-sm" onclick="App.exportWrong()">导出错题</button></div>
+      <div class="setting-row"><div class="sr-info"><h4 style="color:var(--danger)">重置全部</h4><p>清除所有答题记录与进度，不可恢复</p></div><button class="btn btn-danger btn-sm" onclick="App.resetData()">重置</button></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:8px">👤 学习档案</h3>
+      <div class="setting-row"><div class="sr-info"><h4>当前用户</h4><p>${User.getName()} · 数据独立存储，互不干扰</p></div><span class="tag tag-cog" style="background:var(--primary);color:#fff">${User.getName()}</span></div>
+      <div class="setting-row"><div class="sr-info"><h4>切换用户</h4><p>多人共用本系统时切换自己的档案</p></div><button class="btn btn-outline btn-sm" onclick="App.switchUser()">切换</button></div>
+      <div class="setting-row"><div class="sr-info"><h4>新建档案</h4><p>为另一位使用者创建独立学习档案</p></div><button class="btn btn-outline btn-sm" onclick="App.addUser()">新建</button></div>
+      <div class="detail-list" style="margin-top:10px;font-size:12px">
+        <b>数据隔离说明</b>：每位用户拥有独立的答题记录、错题本、学习进度与设置，导出/导入数据也按档案隔离。
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:8px">🔒 访问控制</h3>
+      <div class="setting-row"><div class="sr-info"><h4>当前会话</h4><p>${API.getShareCode()?'通过分享链接 '+API.getShareCode()+' 进入':'直接访问'}</p></div><span class="tag tag-cog">${API.getToken()?'已认证':'未认证'}</span></div>
+      ${API.getShareCode()?`<div class="setting-row"><div class="sr-info"><h4>分享码</h4><p>当前分享链接独立统计，数据与其他用户隔离</p></div><code style="background:var(--surface-3);padding:6px 10px;border-radius:6px;font-size:13px">${API.getShareCode()}</code></div>`:''}
+      <div class="setting-row"><div class="sr-info"><h4>退出登录</h4><p>清除当前会话，返回登录页</p></div><button class="btn btn-danger btn-sm" onclick="App.doLogout()">退出</button></div>
+      <div class="detail-list" style="margin-top:10px;font-size:12px">
+        <b>安全说明</b>：答案验证在后端完成，前端代码中不包含正确答案。每个分享链接的数据完全隔离。
+      </div>
+    </div>
+    <div class="card" id="adminPanelCard" style="display:none">
+      <h3 style="margin-bottom:8px">🔐 管理面板</h3>
+      <div id="adminPanelContent"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:8px">关于</h3>
+      <div class="detail-list">
+        <b>题库规模</b>：${Q.length} 题，覆盖官方考纲全部17单元<br>
+        <b>模块权重</b>：专业知识30% · 专业实践能力50% · 学科新进展20%<br>
+        <b>题型配比</b>：单选${Q.filter(q=>q.t==='单选题').length} · 多选${Q.filter(q=>q.t==='多选题').length} · 共用题干${Q.filter(q=>q.t==='共用题干题').length} · 案例${Q.filter(q=>q.t==='案例分析题').length}<br>
+        <b>来源声明</b>：依据《放射医学技术（副高级）考试大纲》与《放射医学技术高级教程》知识点编制；如标注"考生回忆版"为公开渠道回忆，未经官方确认。<br>
+        <b>数据存储</b>：全部本地浏览器存储，不上传服务器，可离线使用。
+      </div>
+    </div>`;
+  }
+
+  // ===== 事件绑定与工具 =====
+  function bindEvents(){}
+  function setWrongFilter(f){wrongFilter=f;render()}
+  function setDailyTarget(v){DB.setSetting('dailyTarget',Math.max(5,Math.min(100,+v||30)));toast('已设置每日目标 '+v+' 题')}
+  function setExamDate(v){DB.setSetting('examDate',v||null);toast(v?'✅ 考试日期已设置，将自动生成备考计划':'已清除考试日期');render()}
+  function toggleAutoNext(){const s=DB.getSettings();const nv=!s.autoNext;DB.setSetting('autoNext',nv);toast(nv?'✅ 已开启自动下一题':'已关闭自动下一题');render()}
+  function previewQuestion(id){
+    const q=Q.find(x=>x.id===id);if(!q)return;
+    const dmap={'易':'tag-easy','中':'tag-mid','难':'tag-hard'};
+    const goodM=q.ex.match(/【为什么对】([\s\S]*?)(?=【为什么错】|$)/);
+    const badM=q.ex.match(/【为什么错】([\s\S]*?)$/);
+    const main=document.getElementById('main');
+    main.innerHTML=`<div class="page-head"><h1>📖 题目详情</h1><button class="btn btn-ghost btn-sm" onclick="App.go('${view==='wrong'?'wrong':'review'}')">← 返回</button></div>
+    <div class="card">
+      <div class="qmeta" style="margin-bottom:12px"><span class="tag tag-type">${q.t}</span><span class="tag ${dmap[q.d]}">${q.d}</span><span class="tag tag-cog">${q.c}</span><span class="tag tag-module">${q.un}</span></div>
+      ${q.gs?`<div class="group-stem"><b>📋 共用题干</b>：${esc(q.gs)}</div>`:''}
+      <div class="qstem">${esc(q.s)}</div>
+      <div class="opts" style="margin-bottom:16px">${'ABCDE'.split('').map(k=>`<div class="opt"><div class="opt-key">${k}</div><div class="opt-text">${esc(q.o[k]||q['选项'][k])}</div></div>`).join('')}</div>
+      <div class="explain"><h4>💡 解析</h4><div class="explain-body">${goodM?`<p><span class="why-good">为什么对：</span>${esc(goodM[1].trim())}</p>`:''}${badM?`<p><span class="why-bad">为什么错：</span>${esc(badM[1].trim())}</p>`:''}</div>${q.tr?`<div class="explain-trap"><b>⚠️ 易错陷阱：</b>${esc(q.tr)}</div>`:''}<div class="explain-kp"><span>🏷️ ${esc(q.kp)}</span><span>📚 ${esc(q.ch)}</span></div></div>
+      <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-primary btn-sm" onclick="Quiz.start('free',{ids:['${id}'],count:1})">重做本题</button></div>
+    </div>`;
+  }
+  function markMastered(id){const w=DB.getWrong()[id];if(w){w.mastered=1;DB.save();toast('已标记为掌握');render()}}
+  function exportData(){const data=DB.exportAll();const blob=new Blob([data],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='放射副高题库_数据备份_'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('已导出数据备份')}
+  function importData(){const i=document.createElement('input');i.type='file';i.accept='.json';i.onchange=e=>{const f=e.target.files[0];const r=new FileReader();r.onload=()=>{try{DB.importAll(r.result);toast('导入成功');render()}catch(err){toast('导入失败：文件格式错误')}};r.readAsText(f)};i.click()}
+  function exportWrong(){
+    const wrong=DB.getWrong();const ids=Object.keys(wrong).filter(k=>!wrong[k].mastered);
+    if(!ids.length){toast('错题本为空');return}
+    let txt=`放射医学技术副高 · 错题本导出\n生成时间：${new Date().toLocaleString()}\n共 ${ids.length} 道错题\n${'='.repeat(60)}\n\n`;
+    ids.forEach((id,i)=>{const q=Q.find(x=>x.id===id);if(!q)return;txt+=`【错题 ${i+1}】${q.t||q['题型']} | ${q.d||q['难度']} | ${q.un||q['单元名']}\n${q.s||q['题干']}\n`;const opts=q.o||q['选项']||{};for(const k of 'ABCDE'){txt+=`  ${k}. ${opts[k]||''}\n`}txt+=`正确答案：[需登录后端查看]\n`;txt+=`解析：[需答题后查看]\n`;txt+=`\n${'-'.repeat(60)}\n\n`});
+    const blob=new Blob([txt],{type:'text/plain;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='错题本_'+new Date().toISOString().slice(0,10)+'.txt';a.click();toast('已导出错题本');
+  }
+  function doLogout(){API.logout();location.reload()}
+  // 切换用户：回到用户选择界面
+  function switchUser(){
+    Quiz.exit(); // 退出当前答题会话，避免串号
+    const ls=document.getElementById('lockScreen');
+    document.querySelector('.layout').style.display='none';
+    document.getElementById('quizOverlay').style.display='none';
+    document.querySelector('.toast-wrap').style.display='none';
+    ls.style.display='flex';
+    ls.classList.remove('unlocked');
+    showUserSelect();
+  }
+  // 新建档案
+  function addUser(){
+    const n=prompt('请输入新用户昵称（如：张三）：');
+    if(!n||!n.trim()) return;
+    const id=User.create(n.trim());
+    User.setCurrent(id);
+    localStorage.setItem('fsgf_user_created','1');
+    DB.load(); // 重新加载新用户数据
+    toast('已创建档案「'+n.trim()+'」并切换');
+    render();
+  }
+  async function showAdminPanel(){
+    const card = document.getElementById('adminPanelCard');
+    const content = document.getElementById('adminPanelContent');
+    card.style.display = '';
+    const sys = await API.systemStatus();
+    const shares = await API.listShares();
+
+    content.innerHTML = `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="stat-card"><div class="sc-val">${sys.system.total_questions}</div><div class="sc-label">题目总数</div></div>
+        <div class="stat-card"><div class="sc-val">${sys.system.active_shares}</div><div class="sc-label">活跃分享</div></div>
+        <div class="stat-card"><div class="sc-val">${sys.system.total_sessions}</div><div class="sc-label">总用户数</div></div>
+        <div class="stat-card"><div class="sc-val">${sys.system.total_records}</div><div class="sc-label">总答题数</div></div>
+      </div>
+      <h4 style="margin:12px 0 8px">创建新分享</h4>
+      <div class="grid grid-2" style="margin-bottom:14px">
+        <input type="text" id="newShareName" placeholder="分享名称（如：张三备考组）" style="height:38px;padding:0 10px;border:1px solid var(--border-2);border-radius:8px;background:var(--surface);color:var(--text)">
+        <input type="password" id="newSharePwd" placeholder="访问密码（留空=免密）" style="height:38px;padding:0 10px;border:1px solid var(--border-2);border-radius:8px;background:var(--surface);color:var(--text)">
+        <input type="number" id="newShareMax" placeholder="最大使用次数（-1=不限）" value="-1" style="height:38px;padding:0 10px;border:1px solid var(--border-2);border-radius:8px;background:var(--surface);color:var(--text)">
+        <input type="number" id="newShareExpire" placeholder="有效天数（0=永久）" value="30" style="height:38px;padding:0 10px;border:1px solid var(--border-2);border-radius:8px;background:var(--surface);color:var(--text)">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="App.createShareAction()">➕ 创建分享链接</button>
+      <div id="shareResult" style="margin-top:10px"></div>
+
+      <h4 style="margin:18px 0 8px">已有分享列表 (${shares.shares.length})</h4>
+      <div id="sharesList"></div>
+    `;
+    renderSharesList(shares.shares);
+  }
+
+  async function createShareAction(){
+    const name = document.getElementById('newShareName').value.trim();
+    const password = document.getElementById('newSharePwd').value;
+    const maxUses = parseInt(document.getElementById('newShareMax').value) || -1;
+    const expireDays = parseInt(document.getElementById('newShareExpire').value) || 0;
+    if (!name) { toast('请输入分享名称'); return; }
+    const r = await API.createShare({ name, password, max_uses: maxUses, expire_days: expireDays });
+    if (r.ok) {
+      const url = location.origin + location.pathname + '?share=' + r.share.code + (password ? '&pwd=' + password : '');
+      document.getElementById('shareResult').innerHTML = `
+        <div class="card" style="background:var(--success-l);border-color:var(--success);margin-top:10px">
+          <b>✅ 分享链接已创建</b><br>
+          <code style="word-break:break-all;font-size:13px">${url}</code>
+          <br><button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="navigator.clipboard.writeText('${url}');this.textContent='已复制'">📋 复制链接</button>
+          <span style="margin-left:8px;font-size:12px;color:var(--text-3)">密码: ${password || '(免密)'}</span>
+        </div>`;
+      // 刷新列表
+      const shares = await API.listShares();
+      renderSharesList(shares.shares);
+    } else {
+      toast('创建失败: ' + (r.error || '未知错误'));
+    }
+  }
+
+  function renderSharesList(shares){
+    const container = document.getElementById('sharesList');
+    if (!shares.length) { container.innerHTML = '<p class="muted">暂无分享记录</p>'; return; }
+    container.innerHTML = shares.map(s => `
+      <div class="card" style="margin-bottom:8px;padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:start">
+          <div>
+            <b>${s.name || '(未命名)'}</b> · <code style="font-size:12px">${s.code}</code>
+            ${s.password ? '<span class="tag tag-easy" style="margin-left:6px">有密码</span>' : '<span class="tag tag-mid" style="margin-left:6px">免密</span>'}
+            ${!s.is_active ? '<span class="tag tag-hard" style="margin-left:6px">已禁用</span>' : ''}
+            <div class="muted" style="font-size:11px;margin-top:3px">
+              使用 ${s.use_count}/${s.max_uses==-1?'∞':s.max_uses} 次 ·
+              ${s.stats.unique_users} 用户 · ${s.stats.total_answers} 答题 · 正确率 ${s.stats.avg_accuracy}%
+              ${s.expires_at? '· 过期 '+s.expires_at.slice(0,10): ''}
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <button class="btn btn-ghost btn-sm" onclick="App.viewShareStats(${s.id})">📊 统计</button>
+            <button class="btn btn-outline btn-sm" onclick="App.toggleShareAction(${s.id})">${s.is_active?'禁用':'启用'}</button>
+            <button class="btn btn-danger btn-sm" onclick="App.deleteShareAction(${s.id})">删除</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function viewShareStats(id){
+    const r = await API.shareStats(id);
+    if (!r.ok) { toast(r.error); return; }
+    const s = r.share_info;
+    const o = r.overview;
+    alert(`分享 [${s.code}] ${s.name}\n\n使用次数: ${s.use_count}\n用户数: ${o.unique_users}\n总答题: ${o.total_answers}\n正确率: ${o.accuracy}%\n\n详细数据可在控制台查看`);
+    console.log('[Admin] Share Stats:', r);
+  }
+
+  async function toggleShareAction(id){
+    await API.toggleShare(id);
+    const shares = await API.listShares();
+    renderSharesList(shares.shares);
+    toast('状态已更新');
+  }
+  async function deleteShareAction(id){
+    if (!confirm('确定删除此分享？该分享的所有答题数据将被清除且不可恢复！')) return;
+    await API.deleteShare(id);
+    const shares = await API.listShares();
+    renderSharesList(shares.shares);
+    toast('已删除');
+  }
+  function resetData(){if(confirm('⚠️ 确定要清除所有答题记录、错题本、勋章与段位吗？此操作不可恢复！')){DB.reset();toast('已重置全部数据');setTimeout(()=>location.reload(),500)}}
+  function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+  return {init,go,render,toast,toggleTheme,setWrongFilter,setDailyTarget,setExamDate,toggleAutoNext,openLecture,previewQuestion,markMastered,exportData,importData,exportWrong,resetData,doLogout,showLock,showAdminPanel,createShareAction,viewShareStats,toggleShareAction,deleteShareAction,switchUser,addUser,selectUser};
+})();
+document.addEventListener('DOMContentLoaded',App.init);
