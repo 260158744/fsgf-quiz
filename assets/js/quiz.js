@@ -121,9 +121,13 @@ const Quiz=(()=>{
   }
   function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 
-  // ★ 统一判断：该题是否允许多选（共用题干题由 mk 字段标记，前端无答案）
+  // ★ 统一判断：该题是否允许多选
+  // 公开版数据不含答案，"能选几个"必须靠数据侧的 mk 标记（正确答案≥2项时 mk=1）。
+  // 多选题按定义恒为多选；案例分析题/共用题干题(A3/A4型)既有单答案也有多答案，一律看 mk。
   function isMultiQ(q){
-    return q.t==='多选题' || q.t==='案例分析题' || (q.t==='共用题干题' && q.mk===1);
+    if(q.t==='多选题') return true;
+    if(q.t==='案例分析题'||q.t==='共用题干题') return q.mk===1;
+    return false;
   }
 
   // ★ v1.1 共用题干题：抽到组内任一题则整组按原始顺序加入（保证病例在前）
@@ -522,8 +526,14 @@ const Quiz=(()=>{
       <div class="explain-kp">
         <span>🏷️ 知识点：${esc(q.kp)}</span>
         <span>📚 大纲：${esc(q.ch)}</span>
+        <span class="tag">${esc(q.bk||'副高')}</span>
+        ${q.hf?`<span class="tag tag-hot">🔥 高频考点</span>`:''}
       </div>
-      <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="App.openLecture('${q.u}')">📚 查阅「${esc(q.un)}」单元讲义 →</button>
+      ${q.ref&&q.ref.篇?`<div class="explain-book">📖 教材出处：<b>${esc(q.ref.篇)}${q.ref.章?' › '+esc(q.ref.章):''}${q.ref.节?' › '+esc(q.ref.节):''}</b>${q.ref.页?' <span class="tbk-pg">P.'+q.ref.页+'</span>':''} <button class="btn btn-outline btn-sm" style="margin-left:6px" onclick="App.openBook(${JSON.stringify(q.ref).replace(/"/g,'&quot;')})">📖 查看教材原文</button></div>`:''}
+      <div class="explain-actions">
+        <button class="btn btn-ghost btn-sm" onclick="App.openLecture('${q.u}')">📚 查阅「${esc(q.un)}」单元讲义</button>
+        <button class="btn btn-ghost btn-sm" onclick="App.openNote('${q.id}')">📝 记笔记${(window.DB&&DB.getNotesByQ&&DB.getNotesByQ(q.id).length)?' ('+DB.getNotesByQ(q.id).length+')':''}</button>
+      </div>
       ${scoreInfo && scoreInfo.scoreLevel!=='full'?renderAttribution(q.id):''}
       ${renderAskTeacher(q)}
     </div>

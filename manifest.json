@@ -2,7 +2,7 @@
   "name": "放射医学技术副高 · 智能备考题库",
   "short_name": "放射技术题库",
   "description": "2000道真题，智能刷题备考，支持离线使用",
-  "start_url": "./",
+  "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0e7c7b",

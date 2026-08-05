@@ -25,6 +25,8 @@ const DB=(()=>{
     if(!cache.feynman) cache.feynman={}; // qid -> {text,ts,keywords}
     if(!cache.reviewMap) cache.reviewMap={}; // qid -> {count,nextAt}
     if(!cache.seen) cache.seen=[]; // 最近7天答过的qid
+    if(!cache.notes) cache.notes=[]; // ★ 笔记：[{id,qid,text,tags,ts,upd}]
+    if(!cache.imported) cache.imported=[]; // ★ 自动出题导入的题目
     return cache;
   }
   function save(){
@@ -159,6 +161,35 @@ const DB=(()=>{
     updateGoal(id,patch){const d=load();const g=d.goals.find(x=>x.id===id);if(g){Object.assign(g,patch);save()}},
     removeGoal(id){const d=load();d.goals=d.goals.filter(g=>g.id!==id);save()},
     getGoals(){const d=load();return d.goals.filter(g=>!g.done).sort((a,b)=>b.startDate-a.startDate)},
-    getActiveGoal(){const d=load();return d.goals.find(g=>!g.done&&g.startDate<=Date.now())}
+    getActiveGoal(){const d=load();return d.goals.find(g=>!g.done&&g.startDate<=Date.now())},
+    // ★★ 笔记 CRUD（独立数组，支持按题目关联 + 全文检索）★★
+    addNote(qid,text,tags){
+      const d=load();
+      const n={id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+               qid:qid||'',text:text||'',tags:Array.isArray(tags)?tags:(tags?String(tags).split(/[,，\s]+/).filter(Boolean):[]),
+               ts:Date.now(),upd:Date.now()};
+      d.notes.push(n);save();return n.id;
+    },
+    updateNote(id,text,tags){
+      const d=load();const n=d.notes.find(x=>x.id===id);
+      if(!n)return false;
+      if(text!==undefined&&text!==null)n.text=text;
+      if(tags!==undefined&&tags!==null)n.tags=Array.isArray(tags)?tags:String(tags).split(/[,，\s]+/).filter(Boolean);
+      n.upd=Date.now();save();return true;
+    },
+    deleteNote(id){const d=load();const before=d.notes.length;d.notes=d.notes.filter(x=>x.id!==id);save();return d.notes.length<before},
+    getNote(id){const d=load();return d.notes.find(x=>x.id===id)||null},
+    getNotesByQ(qid){const d=load();return d.notes.filter(x=>x.qid===qid).sort((a,b)=>b.upd-a.upd)},
+    getAllNotes(){const d=load();return d.notes.slice().sort((a,b)=>b.upd-a.upd)},
+    searchNotes(kw){
+      const d=load();if(!kw)return d.notes.slice().sort((a,b)=>b.upd-a.upd);
+      const k=String(kw).toLowerCase();
+      return d.notes.filter(n=>(n.text||'').toLowerCase().includes(k)||(n.tags||[]).some(t=>t.toLowerCase().includes(k))||(n.qid||'').toLowerCase().includes(k))
+                    .sort((a,b)=>b.upd-a.upd);
+    },
+    // ★★ 自动出题导入 ★★
+    addImported(q){const d=load();if(!d.imported.find(x=>x.id===q.id)){d.imported.push(q);save();return true}return false},
+    getImported(){const d=load();return d.imported||[]},
+    clearImported(){const d=load();d.imported=[];save()}
   };
 })();

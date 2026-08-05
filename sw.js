@@ -5,7 +5,7 @@
   - 图片/字体: Stale-While-Revalidate
   注意: 使用相对路径，兼容 GitHub Pages 子路径部署
 */
-const CACHE_VERSION = 'fsgf-v7';
+const CACHE_VERSION = 'fsgf-v8';
 const STATIC_CACHE = CACHE_VERSION + '-static';
 const DATA_CACHE = CACHE_VERSION + '-data';
 const API_CACHE = CACHE_VERSION + '-api';
@@ -24,9 +24,12 @@ const STATIC_ASSETS = [
   './assets/js/quiz.js',
   './assets/js/report.js',
   './assets/js/app.js',
+  './assets/js/user.js',
   './assets/js/data/questions_public.js',
   './assets/js/data/questions_offline.js',
-  './assets/js/data/lectures.js'
+  './assets/js/data/lectures.js',
+  './assets/js/data/textbook.js',
+  './assets/js/data/hotpoints.js'
 ];
 
 // 安装：预缓存所有静态资源

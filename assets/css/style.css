@@ -1037,3 +1037,90 @@ html[data-motion="off"] *{transition:none!important;animation:none!important}
 
 /* ★ 答题区工具按钮定位 */
 .quiz-body{position:relative}
+
+/* ===== 板块切换 ===== */
+.sec-switch{display:flex;background:var(--surface-2);border-radius:20px;padding:3px;gap:2px}
+.sec-tab{border:none;background:transparent;color:var(--text-2);font-size:13px;font-weight:600;padding:5px 14px;border-radius:16px;cursor:pointer;transition:.15s}
+.sec-tab.active{background:var(--primary);color:#fff;box-shadow:var(--shadow)}
+@media(max-width:760px){.sec-switch{order:3;margin-left:auto}.sec-tab{padding:4px 10px;font-size:12px}}
+
+/* ===== 教材关联 ===== */
+.tbk-part{margin-bottom:14px}
+.tbk-part.active{background:var(--primary-ll);border-radius:var(--radius)}
+.tbk-part>h3{font-size:16px;margin:6px 0 8px;color:var(--primary-d)}
+.tbk-chap{margin:6px 0 6px 14px;padding-left:10px;border-left:2px solid var(--border-2)}
+.tbk-chap>h4{font-size:14px;margin:8px 0 4px;color:var(--text)}
+.tbk-pg{font-size:11px;color:var(--accent);background:var(--accent-l);padding:1px 6px;border-radius:6px;margin-left:6px}
+.tbk-sec{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;margin:5px 0}
+.tbk-sec.tbk-flash{animation:tbkflash 1.6s ease}
+@keyframes tbkflash{0%{background:var(--warn-l);border-color:var(--warn)}100%{background:var(--surface);border-color:var(--border)}}
+.tbk-sec-h{font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tbk-count{font-size:11px;color:var(--success);background:var(--success-l);padding:1px 7px;border-radius:6px}
+.tbk-body{font-size:12.5px;color:var(--text-2);margin-top:6px;line-height:1.7;max-height:200px;overflow:auto;padding:6px 8px;background:var(--surface-2);border-radius:6px}
+
+/* ===== 笔记 ===== */
+.note-search{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.note-search input{flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;background:var(--surface)}
+.note-count{font-size:13px;color:var(--text-3);white-space:nowrap}
+.note-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px;box-shadow:var(--shadow)}
+.note-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.note-qid{font-size:12px;color:var(--text-3);font-family:monospace}
+.note-time{margin-left:auto;font-size:12px;color:var(--text-3)}
+.note-text{font-size:14px;line-height:1.7;white-space:pre-wrap;color:var(--text)}
+.note-q{font-size:12px;color:var(--text-2);margin:8px 0;padding:8px;background:var(--surface-2);border-radius:6px}
+.note-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.note-exist{margin:10px 0;display:flex;flex-direction:column;gap:8px}
+.note-exist-item{background:var(--surface-2);border-radius:var(--radius-sm);padding:8px 10px}
+.ne-text{font-size:13px;white-space:pre-wrap;line-height:1.6}
+.ne-foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11px;color:var(--text-3)}
+.note-input{width:100%;min-height:110px;margin:10px 0 8px;padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;font-family:inherit;resize:vertical;background:var(--surface)}
+.note-tag-input{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--surface)}
+.note-q-prev{font-size:13px;background:var(--surface-2);padding:10px;border-radius:var(--radius-sm);margin:8px 0;line-height:1.6}
+
+/* ===== 高频考点 ===== */
+.hot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.hot-card{display:flex;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;box-shadow:var(--shadow)}
+.hot-rank{flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.hot-main{flex:1;min-width:0}
+.hot-name{font-size:14px;font-weight:700}
+.hot-meta{font-size:12px;color:var(--text-3);margin:3px 0}
+.hot-ref{font-size:12px;color:var(--text-2);margin-bottom:6px}
+.hot-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* ===== 自动出题工具 ===== */
+.auto-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+.auto-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.auto-row label{font-size:13px;color:var(--text-2);min-width:38px}
+.auto-row select,.auto-row input{padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;background:var(--surface)}
+.auto-row input[type=number]{width:80px}
+.auto-actions{display:flex;gap:10px;margin:6px 0 14px;flex-wrap:wrap}
+.auto-result .gen-head{font-size:14px;font-weight:600;margin-bottom:10px}
+.gen-list{max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.gen-item{font-size:13px;background:var(--surface-2);border-radius:6px;padding:8px 10px;line-height:1.5}
+.modal-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+
+/* ===== 通用弹窗 ===== */
+.app-modal{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
+.app-modal-mask{position:absolute;inset:0;background:rgba(15,25,40,.5);backdrop-filter:blur(2px)}
+.app-modal-box{position:relative;background:var(--surface);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:560px;width:100%;max-height:86vh;overflow:auto;padding:18px}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.modal-head h3{font-size:16px;margin:0}
+.modal-x{border:none;background:var(--surface-2);width:30px;height:30px;border-radius:50%;font-size:15px;cursor:pointer;color:var(--text-2)}
+.modal-list{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}
+.modal-item{padding:9px 11px;background:var(--surface-2);border-radius:var(--radius-sm);font-size:13px;cursor:pointer;line-height:1.5}
+.modal-item:hover{background:var(--primary-l)}
+
+/* ===== 解析区新增 ===== */
+.explain-book{background:var(--primary-ll);border:1px solid var(--primary-l);border-radius:var(--radius-sm);padding:8px 10px;margin-top:10px;font-size:13px;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.explain-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+
+.tag-hot{background:var(--warn-l,#fff3e0);color:var(--warn,#e67e22);font-weight:700}
+
+/* ===== 教材视图折叠与搜索 ===== */
+.tbk-part-h{display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;padding:10px 12px;margin:0;border-radius:8px}
+.tbk-part-h:hover{background:var(--surface-2)}
+.tbk-part-meta{font-size:12px;color:var(--text-3);font-weight:400}
+.tbk-search{margin:10px 0}
+.tbk-search input{width:100%;padding:10px 12px;border:1px solid var(--border-2);border-radius:10px;background:var(--surface);color:var(--text);font-size:14px}
+.tbk-hit{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border)}
+.tbk-hit:last-child{border-bottom:none}
