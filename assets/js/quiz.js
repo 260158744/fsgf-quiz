@@ -421,7 +421,7 @@ const Quiz=(()=>{
       // ★ TTS 朗读结果
       if(TTS.isEnabled()){
         TTS.speakResult(ok,scoreLevel);
-        TTS.speakExplain((apiResult&&apiResult.explanation)||q.ex||'');
+        TTS.speakExplain((result&&result.explanation)||q.ex||'');
       }
 
       // ★ 费曼检验（答对关键概念题时触发）
@@ -457,8 +457,8 @@ const Quiz=(()=>{
   function renderExplain(q,ok,userAns,correct,apiResult,scoreInfo){
     const box=document.getElementById('explainBox');
     // 优先使用后端返回的解析，其次用本地题目数据
-    const ex = (apiResult && apiResult.explanation) || q.ex || '';
-    const trap = (apiResult && apiResult.trap) || q.tr || '';
+    const ex = (result && result.explanation) || q.ex || '';
+    const trap = (result && result.trap) || q.tr || '';
     const goodM=ex.match(/【为什么对】([\s\S]*?)(?=【为什么错】|$)/);
     const badM=ex.match(/【为什么错】([\s\S]*?)$/);
 
@@ -519,7 +519,7 @@ const Quiz=(()=>{
         <span>📚 大纲：${esc(q.ch)}</span>
       </div>
       <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="App.openLecture('${q.u}')">📚 查阅「${esc(q.un)}」单元讲义 →</button>
-      ${scoreLevel!=='full'?renderAttribution(q.id):''}
+      ${scoreInfo && scoreInfo.scoreLevel!=='full'?renderAttribution(q.id):''}
       ${renderAskTeacher(q)}
     </div>
     ${renderSimilarCard(q, scoreInfo)}`;
@@ -598,7 +598,7 @@ const Quiz=(()=>{
     };
     const newBadges=Gamify.checkBadges(ctx);
     if(showResult&&s.answers.length){
-      showSessionResult(s,correct,total,acc,dur,newBadges);
+      showSessionResult(s,fullCount,total,acc,dur,newBadges);
       // ★ 模考正向报告
       if(s.mode==='exam'){
         setTimeout(()=>showPositiveReport(s),100);
@@ -611,6 +611,11 @@ const Quiz=(()=>{
     const prevSessions=DB.getSessions().filter(x=>x.mode==='exam'&&x.ts<s.startTime).sort((a,b)=>b.ts-a.ts);
     const prev=prevSessions[0];
     const improvements=[];
+    // 从 session 重新计算当前正确率和用时
+    const fullCount=s.answers.filter(a=>a.ok).length;
+    const total=s.answers.length;
+    const acc=total?Math.round(fullCount/total*100):0;
+    const dur=Math.round((Date.now()-s.startTime)/1000);
     // 对比上次模考
     if(prev){
       if(acc>prev.correct/prev.total*100){
@@ -637,7 +642,7 @@ const Quiz=(()=>{
       }
     }
     if(conquered.length){
-      improvements.push(`✅ 攻克薄弱单元：${conquered.map(u=>{const unit=UNITS.find(x=>x[0]===u);return unit?unit[1]:u}).join('、')}`);
+      improvements.push(`✅ 攻克薄弱单元：${conquered.map(u=>{const qu=Q.find(x=>x.u===u);return qu?qu.un:u}).join('、')}`);
     }
     // 待提升
     const wrongUnits={};
@@ -652,7 +657,7 @@ const Quiz=(()=>{
       <div class="positive-report">
         <div class="pr-title">🎉 本次模考成果</div>
         ${improvements.map(i=>`<div class="pr-item">${i}</div>`).join('')}
-        ${sortedWrong.length?`<div class="pr-weak">💪 待提升：${sortedWrong.map(([u])=>{const unit=UNITS.find(x=>x[0]===u);return unit?unit[1]:u}).join('、')}</div>`:''}
+        ${sortedWrong.length?`<div class="pr-weak">💪 待提升：${sortedWrong.map(([u])=>{const qu=Q.find(x=>x.u===u);return qu?qu.un:u}).join('、')}</div>`:''}
       </div>`;
     body.insertAdjacentHTML('beforeend',reportHTML);
   }
@@ -928,7 +933,7 @@ const Quiz=(()=>{
   function renderTools(){
     const ttsOn=TTS.isEnabled();
     return `<div class="quiz-tools">
-      ${TTS.supported()?<button class="quiz-tool ${ttsOn?'active':''}" id="ttsBtn" onclick="Quiz.toggleTTS()" title="听题模式">🔊</button>:''}
+      ${TTS.supported()?`<button class="quiz-tool ${ttsOn?'active':''}" id="ttsBtn" onclick="Quiz.toggleTTS()" title="听题模式">🔊</button>`:''}
       <button class="quiz-tool" onclick="Sketch.toggle()" title="草稿纸">📝</button>
     </div>`;
   }

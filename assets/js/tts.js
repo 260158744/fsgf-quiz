@@ -1,6 +1,6 @@
 /* ===== 听题模式 · Web Speech API ===== */
 const TTS=(()=>{
-  let _ voices=[];
+  let _voices=[];
   let _rate=1;
   let _enabled=false;
   let _queue=[];
@@ -11,7 +11,7 @@ const TTS=(()=>{
 
   function loadVoices(){
     if(!supported())return;
-    voices=speechSynthesis.getVoices().filter(v=>v.lang.startsWith('zh'));
+    _voices=speechSynthesis.getVoices().filter(v=>v.lang.startsWith('zh'));
   }
   if(supported()){
     loadVoices();
@@ -19,9 +19,9 @@ const TTS=(()=>{
   }
 
   function pickVoice(){
-    if(!voices.length)loadVoices();
+    if(!_voices.length)loadVoices();
     // 优先选 zh-CN 的女声/默认声
-    return voices.find(v=>v.lang==='zh-CN')||voices[0]||null;
+    return _voices.find(v=>v.lang==='zh-CN')||_voices[0]||null;
   }
 
   function speak(text,opts={}){

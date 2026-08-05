@@ -145,7 +145,7 @@ const App=(()=>{
       }
       btn.disabled=false;btn.textContent='解锁进入';
     };
-    input.onkeydown=e=>{if(e.key==='Enter')btn.click()};
+    inputEl.onkeydown=e=>{if(e.key==='Enter')btn.click()};
     toggle.onclick=()=>{input.type=input.type==='password'?'text':'password'};
     input.focus();
 
