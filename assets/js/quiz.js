@@ -41,6 +41,15 @@ const Quiz=(()=>{
     if(opt.type) pool=pool.filter(q=>q.t===opt.type);
     if(opt.module) pool=pool.filter(q=>q.m===opt.module);
     if(opt.ids) pool=pool.filter(q=>opt.ids.includes(q.id));
+    // ★ 归因专项训练
+    if(mode==='reason'){
+      const reasonIds=DB.getWrongByReason(opt.reason);
+      pool=Q.filter(q=>reasonIds.includes(q.id));
+    }
+    // ★ 目标练习模式
+    if(mode==='goal'&&opt.units){
+      pool=pool.filter(q=>opt.units.includes(q.u));
+    }
     let queue=[];
     if(mode==='review'){
       const reviewIds=DB.getReview();
@@ -135,9 +144,17 @@ const Quiz=(()=>{
 
   // ===== 会话控制 =====
   function start(mode,opt={}){
+    // ★ 模考前呼吸引导
+    if(mode==='exam' && DB.getSettings().breathingGuide!==false){
+      showBreathingGuide(()=>{_start(mode,opt)});
+      return;
+    }
+    _start(mode,opt);
+  }
+  function _start(mode,opt={}){
     const queue=pick(mode,opt);
     if(!queue.length){App.toast('没有可用的题目，请先调整筛选或清除答题记录');return false}
-    session={mode,queue,idx:0,answers:[],streak:0,maxStreak:0,startTime:Date.now(),submitted:false};
+    session={mode,queue,idx:0,answers:[],streak:0,maxStreak:0,startTime:Date.now(),submitted:false,consecWrong:0,totalTime:0};
     document.getElementById('quizOverlay').hidden=false;
     render();
     return true;
@@ -160,6 +177,13 @@ const Quiz=(()=>{
     document.getElementById('qprogText').textContent=`第 ${session.idx+1} / ${session.queue.length} 题`;
     document.getElementById('qprogFill').style.width=((session.idx)/session.queue.length*100)+'%';
     document.getElementById('streakPill').textContent='🔥 '+session.streak;
+    // ★ TTS 朗读题目
+    if(TTS.isEnabled()){
+      TTS.speakQuestion(q);
+    }
+    // ★ 草稿纸加载已有内容
+    const draft=DB.getDraft(q.id);
+    if(draft)Sketch.loadStrokes(q.id,draft);
     // body
     const body=document.getElementById('quizBody');
     const isMulti=isMultiQ(q);
@@ -181,6 +205,7 @@ const Quiz=(()=>{
     }
     body.innerHTML=`
     <div class="quiz-body-inner">
+      ${renderTools()}
       <div class="qmeta">
         <span class="tag tag-type">${q.t}</span>
         <span class="tag ${dmap[q.d]}">${q.d}</span>
@@ -366,12 +391,19 @@ const Quiz=(()=>{
                            scoreLevel==='partial'?'var(--warn)':'var(--danger)';
       const xpText = actualXP>0 ? `<span style="color:var(--accent)">+${actualXP} XP</span>` :
                      scoreLevel==='partial' ? '<span class="muted" style="font-size:11px">少选得半分</span>' : '';
+      // ★ 鼓励文案（答错时显示）
+      const encourage = scoreLevel!=='full' ? `<div class="encourage">💬 ${encourageText(q,scoreLevel,session)}</div>` : '';
 
       document.getElementById('quizFooter').innerHTML=`
-        <div style="font-size:13px;font-weight:700;color:${resultColor}">
-          ${resultIcon} ${resultText} ${xpText}
-        </div>
-        <button class="btn btn-primary" id="nextBtn" onclick="Quiz.next()">${isLast?'查看本场结果 →':'下一题 →'}</button>`;
+        <div style="display:flex;flex-direction:column;gap:4px;width:100%">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:13px;font-weight:700;color:${resultColor}">
+              ${resultIcon} ${resultText} ${xpText}
+            </div>
+            <button class="btn btn-primary" id="nextBtn" onclick="Quiz.next()">${isLast?'查看本场结果 →':'下一题 →'}</button>
+          </div>
+          ${encourage}
+        </div>`;
 
       // ★ P0-1 自动下一题（设置开启时）
       const settings=DB.getSettings();
@@ -386,15 +418,33 @@ const Quiz=(()=>{
         },1200);
       }
 
-      // ★ 疲劳检测：连续答错>=5题时提醒休息
+      // ★ TTS 朗读结果
+      if(TTS.isEnabled()){
+        TTS.speakResult(ok,scoreLevel);
+        TTS.speakExplain((apiResult&&apiResult.explanation)||q.ex||'');
+      }
+
+      // ★ 费曼检验（答对关键概念题时触发）
+      if(scoreLevel==='full'){tryFeynman(q)}
+
+      // ★ 疲劳检测：连续答错时分级提醒
       if(!ok){
         session.consecWrong=(session.consecWrong||0)+1;
         if(session.consecWrong>=5){
-          App.toast('🧠 连续答错 5 题，正确率下降，建议休息5分钟再继续');
+          showRestPanel();
           session.consecWrong=0;
+        }else if(session.consecWrong>=3){
+          App.toast('🧠 连续答错 '+session.consecWrong+' 题，慢一点，仔细看题');
         }
       }else{
         session.consecWrong=0;
+      }
+      // ★ 学习超时检测
+      session.totalTime+=dur;
+      if(session.totalTime>2700&&!session._restShown){
+        // 45分钟
+        showRestPanel('timeout');
+        session._restShown=true;
       }
     } catch(err) {
       console.error('[Quiz] Submit error:', err);
@@ -469,6 +519,8 @@ const Quiz=(()=>{
         <span>📚 大纲：${esc(q.ch)}</span>
       </div>
       <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="App.openLecture('${q.u}')">📚 查阅「${esc(q.un)}」单元讲义 →</button>
+      ${scoreLevel!=='full'?renderAttribution(q.id):''}
+      ${renderAskTeacher(q)}
     </div>
     ${renderSimilarCard(q, scoreInfo)}`;
   }
@@ -499,6 +551,12 @@ const Quiz=(()=>{
     document.body.appendChild(el);setTimeout(()=>el.remove(),800);
   }
   function next(){
+    // ★ 保存草稿到错题
+    const q=cur();
+    if(q){
+      const draft=Sketch.saveStrokes(q.id);
+      if(draft)DB.setDraft(q.id,draft);
+    }
     session.idx++;
     if(session.idx>=session.queue.length){
       finishSession(true);
@@ -541,7 +599,62 @@ const Quiz=(()=>{
     const newBadges=Gamify.checkBadges(ctx);
     if(showResult&&s.answers.length){
       showSessionResult(s,correct,total,acc,dur,newBadges);
+      // ★ 模考正向报告
+      if(s.mode==='exam'){
+        setTimeout(()=>showPositiveReport(s),100);
+      }
     }
+  }
+
+  // ★ 正向成果报告
+  function showPositiveReport(s){
+    const prevSessions=DB.getSessions().filter(x=>x.mode==='exam'&&x.ts<s.startTime).sort((a,b)=>b.ts-a.ts);
+    const prev=prevSessions[0];
+    const improvements=[];
+    // 对比上次模考
+    if(prev){
+      if(acc>prev.correct/prev.total*100){
+        improvements.push(`📈 正确率提升 ${Math.round(acc-prev.correct/prev.total*100)} 个百分点（上次 ${Math.round(prev.correct/prev.total*100)}%）`);
+      }
+      if(s.maxStreak>=5){
+        improvements.push(`🔥 最长连胜 ${s.maxStreak} 题，专注力很棒`);
+      }
+      if(dur<prev.dur&&s.answers.length>=prev.total){
+        improvements.push(`⚡ 用时缩短，答题效率提升`);
+      }
+    }else{
+      improvements.push(`🎯 首次模考完成，迈出了重要一步`);
+      if(s.maxStreak>=3)improvements.push(`🔥 最长连胜 ${s.maxStreak} 题`);
+    }
+    // 攻克的薄弱点
+    const weakBefore=Report.weakList();
+    const conquered=[];
+    for(const w of weakBefore){
+      // 如果本次该单元答题全对
+      const unitAns=s.answers.filter(a=>Q.find(x=>x.id===a.qid)?.u===w.u);
+      if(unitAns.length&&unitAns.every(a=>a.ok)){
+        conquered.push(w.u);
+      }
+    }
+    if(conquered.length){
+      improvements.push(`✅ 攻克薄弱单元：${conquered.map(u=>{const unit=UNITS.find(x=>x[0]===u);return unit?unit[1]:u}).join('、')}`);
+    }
+    // 待提升
+    const wrongUnits={};
+    s.answers.filter(a=>!a.ok).forEach(a=>{
+      const q=Q.find(x=>x.id===a.qid);
+      if(q)wrongUnits[q.u]=(wrongUnits[q.u]||0)+1;
+    });
+    const sortedWrong=Object.entries(wrongUnits).sort((a,b)=>b[1]-a[1]).slice(0,2);
+
+    const body=document.getElementById('quizBody');
+    const reportHTML=`
+      <div class="positive-report">
+        <div class="pr-title">🎉 本次模考成果</div>
+        ${improvements.map(i=>`<div class="pr-item">${i}</div>`).join('')}
+        ${sortedWrong.length?`<div class="pr-weak">💪 待提升：${sortedWrong.map(([u])=>{const unit=UNITS.find(x=>x[0]===u);return unit?unit[1]:u}).join('、')}</div>`:''}
+      </div>`;
+    body.insertAdjacentHTML('beforeend',reportHTML);
   }
   function showSessionResult(s,correct,total,acc,dur,badges){
     // 重新计算（因为 finishSession 已更新但 s.answers 包含 scoreLevel）
@@ -603,5 +716,233 @@ const Quiz=(()=>{
     setTimeout(()=>start('free',{ids:wrongIds,count:wrongIds.length}),100);
   }
   function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-  return {start,exit,submit,next,skip,toggle,again,reviewMistakes,render,pick,weakPoints,cur};
+
+  // ★ 呼吸引导浮层
+  function showBreathingGuide(onComplete){
+    const overlay=document.createElement('div');
+    overlay.className='breathing-overlay';
+    overlay.innerHTML=`
+      <div class="breathing-content">
+        <div class="breathing-title">🌿 考前放松</div>
+        <div class="breathing-subtitle">深呼吸能提升专注力</div>
+        <div class="breathing-circle">
+          <div class="breathing-ring"></div>
+          <div class="breathing-ring breathing-ring-2"></div>
+          <div class="breathing-text" id="breathText">准备...</div>
+        </div>
+        <div class="breathing-hint">吸气 4秒 → 屏息 4秒 → 呼气 4秒</div>
+        <button class="btn btn-ghost breathing-skip" id="breathSkip">跳过，直接开始</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    const phases=[{t:'吸气...',d:4000},{t:'屏息...',d:4000},{t:'呼气...',d:4000}];
+    let phase=0;
+    const textEl=overlay.querySelector('#breathText');
+    function nextPhase(){
+      if(phase>=phases.length){
+        overlay.remove();
+        onComplete();
+        return;
+      }
+      textEl.textContent=phases[phase].t;
+      const ring=overlay.querySelector('.breathing-ring');
+      if(phase===0)ring.classList.add('breathing-inhale');
+      else if(phase===2)ring.classList.remove('breathing-inhale'),ring.classList.add('breathing-exhale');
+      setTimeout(()=>{phase++;nextPhase()},phases[phase-1]?.d||4000);
+    }
+    setTimeout(nextPhase,500);
+    overlay.querySelector('#breathSkip').onclick=()=>{overlay.remove();onComplete()};
+  }
+
+  // ★ 鼓励文案池
+  const ENCOURAGE={
+    first_wrong:['这个知识点容易混淆，现在弄懂了就是赚到','这题偏难，很多人都会踩坑，看懂解析就好'],
+    repeat_wrong:['这个点反复出错，建议查阅讲义后专门突破','别灰心，同类型的题再来一次就熟了'],
+    partial:['思路对了大半，差最后一步','少选不扣全分，说明方向是对的'],
+    case_wrong:['案例题信息量大，拆开逐条分析就不难','案例题确实难，逐个排除选项是关键'],
+    misread:['审题时多看一眼关键词，就能避免这种失误'],
+    concept:['概念还需要再巩固，讲义里有详细解释']
+  };
+  function encourageText(q,scoreLevel,session){
+    const wrong=DB.getWrong();
+    const w=wrong[q.id];
+    const isRepeat=w&&w.count>=2;
+    let pool;
+    if(scoreLevel==='partial')pool=ENCOURAGE.partial;
+    else if(isRepeat)pool=ENCOURAGE.repeat_wrong;
+    else if(q.t==='案例分析题'||q.t==='共用题干题')pool=ENCOURAGE.case_wrong;
+    else if(w&&w.reason==='misread')pool=ENCOURAGE.misread;
+    else if(w&&w.reason==='concept')pool=ENCOURAGE.concept;
+    else pool=ENCOURAGE.first_wrong;
+    return pool[Math.floor(Math.random()*pool.length)];
+  }
+
+  // ★ 自我归因标签
+  const REASONS=[
+    {code:'careless',label:'我其实会，只是粗心',ico:'😅'},
+    {code:'concept',label:'概念还没吃透',ico:'🤔'},
+    {code:'misread',label:'审题没看清',ico:'👀'},
+    {code:'unknown',label:'完全没思路',ico:'😵'}
+  ];
+  function renderAttribution(qid){
+    const w=DB.getWrong()[qid];
+    const current=w?.reason;
+    return `<div class="attribution-box" id="attributionBox">
+      <div class="attr-title">💭 为什么答错了？</div>
+      <div class="attr-tags">
+        ${REASONS.map(r=>`<button class="attr-tag ${current===r.code?'active':''}" onclick="Quiz.setReason('${qid}','${r.code}')">${r.ico} ${r.label}</button>`).join('')}
+      </div>
+    </div>`;
+  }
+  function setReason(qid,code){
+    DB.setWrongReason(qid,code);
+    // 更新UI选中状态
+    document.querySelectorAll('.attr-tag').forEach(t=>t.classList.remove('active'));
+    event?.target?.closest('.attr-tag')?.classList.add('active');
+  }
+
+  // ★ 「问老师」功能
+  function renderAskTeacher(q){
+    const confused=DB.getWrong()[q.id]?.confused;
+    return `<div class="ask-teacher">
+      <div class="at-title">💡 对这道题还有疑问？</div>
+      <div class="at-actions">
+        <button class="btn btn-ghost btn-sm ${confused?'at-marked':''}" onclick="Quiz.markConfused('${q.id}')">${confused?'✅ 已标记需复习':'❓ 我没看懂'}</button>
+        <button class="btn btn-ghost btn-sm" onclick="Quiz.askAbout('${q.id}')">📝 追问</button>
+      </div>
+    </div>`;
+  }
+  function markConfused(qid){
+    DB.setConfused(qid);
+    App.toast('已标记为「需后续复习」，题库将持续优化此题');
+    // 更新按钮状态
+    const btn=event?.target;
+    if(btn){btn.classList.add('at-marked');btn.textContent='✅ 已标记需复习'}
+  }
+  function askAbout(qid){
+    const text=prompt('请输入你的疑问：');
+    if(!text||!text.trim())return;
+    // 尝试调用后端AI接口
+    if(navigator.onLine&&API.getToken()){
+      App.toast('正在请求AI解答...');
+      API.ask(qid,text.trim()).then(r=>{
+        if(r&&r.ok&&r.answer){
+          alert('💡 AI解答：\n\n'+r.answer);
+        }else{
+          App.toast('AI暂不可用，已标记为待解答');
+          DB.setConfused(qid);
+        }
+      }).catch(()=>{App.toast('网络错误，已标记为待解答');DB.setConfused(qid)});
+    }else{
+      App.toast('离线模式：已标记为待解答，联网后可追问');
+      DB.setConfused(qid);
+    }
+  }
+
+  // ★ 费曼检验
+  function tryFeynman(q){
+    // 仅关键概念题且答对时触发
+    if(!q.key||!q.key_concepts||!q.key_concepts.length)return;
+    if(session.answers[session.idx]?.scoreLevel!=='full')return;
+    // 每题只弹一次
+    if(DB.getFeynman(q.id))return;
+    setTimeout(()=>{
+      const box=document.getElementById('explainBox');
+      if(!box)return;
+      const feynmanHTML=`
+        <div class="feynman-box" id="feynmanBox">
+          <div class="fm-title">🧠 费曼检验 · 用自己的话解释</div>
+          <div class="fm-q">${esc(q.s)}</div>
+          <div class="fm-hint">请用自己的话解释为什么（不必一模一样，说出关键点即可）：</div>
+          <textarea class="fm-input" id="feynmanInput" rows="3" placeholder="例如：T1加权像主要反映组织的T1弛豫时间差异..."></textarea>
+          <div class="fm-actions">
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('feynmanBox').remove()">跳过</button>
+            <button class="btn btn-primary btn-sm" onclick="Quiz.submitFeynman('${q.id}')">提交解释</button>
+          </div>
+          <div class="fm-result" id="feynmanResult"></div>
+        </div>`;
+      box.insertAdjacentHTML('beforeend',feynmanHTML);
+    },800);
+  }
+  function submitFeynman(qid){
+    const input=document.getElementById('feynmanInput');
+    if(!input||!input.value.trim())return;
+    const text=input.value.trim();
+    const q=Q.find(x=>x.id===qid);
+    if(!q||!q.key_concepts)return;
+    // 前端关键词匹配
+    const keywords=q.key_concepts;
+    const matched=keywords.filter(kw=>text.includes(kw));
+    const ratio=matched.length/keywords.length;
+    let feedback='';
+    if(ratio>=0.7){
+      feedback=`✅ 解释得很好！你提到了 ${matched.length}/${keywords.length} 个关键概念：${matched.join('、')}`;
+    }else if(ratio>=0.3){
+      feedback=`⚠️ 部分正确。你提到了 ${matched.length}/${keywords.length} 个关键点：${matched.join('、')}。<br>还差：${keywords.filter(kw=>!matched.includes(kw)).join('、')}`;
+    }else{
+      feedback=`💡 还需要补充关键概念。参考要点：${keywords.join('、')}`;
+    }
+    DB.saveFeynman(qid,text);
+    document.getElementById('feynmanResult').innerHTML=`<div class="fm-feedback">${feedback}</div>`;
+    document.getElementById('feynmanInput').disabled=true;
+  }
+
+  // ★ 休息提醒面板
+  function showRestPanel(type){
+    const overlay=document.createElement('div');
+    overlay.className='rest-overlay';
+    const isTimeout=type==='timeout';
+    overlay.innerHTML=`
+      <div class="rest-panel">
+        <div class="rest-ico">${isTimeout?'⏰':'🧠'}</div>
+        <h3>${isTimeout?'已学习超过45分钟':'连续答错较多'}</h3>
+        <p class="rest-msg">${isTimeout?'长时间学习效率会下降，站起来活动一下':'正确率下降，休息一下再继续效果更好'}</p>
+        <div class="rest-actions">
+          <button class="btn btn-primary" onclick="this.closest('.rest-overlay').remove();Quiz._restTimer()">休息 5 分钟</button>
+          <button class="btn btn-ghost" onclick="this.closest('.rest-overlay').remove()">继续坚持</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+  }
+  function _restTimer(){
+    let sec=300;
+    const overlay=document.createElement('div');
+    overlay.className='rest-overlay rest-timing';
+    overlay.innerHTML=`<div class="rest-panel"><div class="rest-ico">⏳</div><h3>休息中</h3><div class="rest-countdown" id="restCD">5:00</div><button class="btn btn-ghost" onclick="this.closest('.rest-overlay').remove();Quiz._resume()">提前结束</button></div>`;
+    document.body.appendChild(overlay);
+    const cd=document.getElementById('restCD');
+    const timer=setInterval(()=>{
+      sec--;
+      if(sec<=0){clearInterval(timer);overlay.remove();_resume();return}
+      cd.textContent=Math.floor(sec/60)+':'+(sec%60).toString().padStart(2,'0');
+    },1000);
+    Quiz._restTimerInterval=timer;
+  }
+  function _resume(){
+    if(Quiz._restTimerInterval)clearInterval(Quiz._restTimerInterval);
+    session._restShown=false;
+    session.totalTime=0;
+    App.toast('休息结束，继续加油 💪');
+  }
+
+  // ★ TTS 和草稿纸按钮（在答题区渲染）
+  function renderTools(){
+    const ttsOn=TTS.isEnabled();
+    return `<div class="quiz-tools">
+      ${TTS.supported()?<button class="quiz-tool ${ttsOn?'active':''}" id="ttsBtn" onclick="Quiz.toggleTTS()" title="听题模式">🔊</button>:''}
+      <button class="quiz-tool" onclick="Sketch.toggle()" title="草稿纸">📝</button>
+    </div>`;
+  }
+  function toggleTTS(){
+    const on=TTS.toggle();
+    document.getElementById('ttsBtn')?.classList.toggle('active',on);
+    if(on&&session){
+      const q=cur();
+      if(q)TTS.speakQuestion(q);
+    }
+    App.toast(on?'听题模式已开启':'听题模式已关闭');
+  }
+
+  return {start,exit,submit,next,skip,toggle,again,reviewMistakes,render,pick,weakPoints,cur,setReason,
+    showBreathingGuide,encourageText,markConfused,askAbout,tryFeynman,submitFeynman,
+    showRestPanel,_restTimer,_resume,renderTools,toggleTTS};
 })();

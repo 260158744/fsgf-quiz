@@ -19,7 +19,10 @@ const DB=(()=>{
     if(!cache.daily) cache.daily={}; // date -> {target,done}
     if(!cache.xp) cache.xp=0;
     if(!cache.streak){cache.streak=0;cache.lastCheckin=null;}
-    if(!cache.settings) cache.settings={theme:'light',dailyTarget:30,autoNext:false,examDate:null};
+    if(!cache.settings) cache.settings={theme:'light',dailyTarget:30,autoNext:false,examDate:null,
+      fontSize:'md',bgTone:'default',showTimer:true,reduceMotion:false,shuffleOpts:false,breathingGuide:true,ttsEnabled:false};
+    if(!cache.goals) cache.goals=[]; // 学习目标列表
+    if(!cache.feynman) cache.feynman={}; // qid -> {text,ts,keywords}
     if(!cache.reviewMap) cache.reviewMap={}; // qid -> {count,nextAt}
     if(!cache.seen) cache.seen=[]; // 最近7天答过的qid
     return cache;
@@ -58,7 +61,7 @@ const DB=(()=>{
       updAbility(rec.u,rec.c,rec.ok);
       // 错题本
       if(!rec.ok){
-        const w=d.wrong[rec.qid]||{count:0,first:Date.now(),last:Date.now(),mastered:0,mastery:0,notes:''};
+        const w=d.wrong[rec.qid]||{count:0,first:Date.now(),last:Date.now(),mastered:0,mastery:0,notes:'',reason:'',draft:'',confused:false};
         w.count++;w.last=Date.now();w.mastered=0;
         d.wrong[rec.qid]=w;
         d.reviewMap[rec.qid]={count:0,nextAt:Date.now()+86400000};
@@ -123,6 +126,25 @@ const DB=(()=>{
       const d=load();const set=new Set();
       for(const s of d.seen) set.add(s.id);
       return set;
-    }
+    },
+    // ★ 错因归因
+    setWrongReason(qid,reason){const d=load();if(d.wrong[qid]){d.wrong[qid].reason=reason;save()}},
+    getWrongByReason(reason){const d=load();const out=[];for(const id in d.wrong){if(!d.wrong[id].mastered&&d.wrong[id].reason===reason)out.push(id)}return out},
+    getReasonStats(){const d=load();const stats={careless:0,concept:0,misread:0,unknown:0,unlabeled:0};for(const id in d.wrong){if(d.wrong[id].mastered)continue;const r=d.wrong[id].reason||'unlabeled';stats[r]=(stats[r]||0)+1}return stats},
+    // ★ 草稿存储
+    setDraft(qid,draft){const d=load();if(d.wrong[qid]){d.wrong[qid].draft=draft;save()}},
+    getDraft(qid){const d=load();return d.wrong[qid]?.draft||''},
+    // ★ 困惑标记
+    setConfused(qid){const d=load();if(d.wrong[qid]){d.wrong[qid].confused=true;save()}},
+    getConfused(){const d=load();const out=[];for(const id in d.wrong){if(d.wrong[id].confused)out.push(id)}return out},
+    // ★ 费曼记录
+    saveFeynman(qid,text){const d=load();d.feynman[qid]={text,ts:Date.now()};save()},
+    getFeynman(qid){const d=load();return d.feynman[qid]||null},
+    // ★ 学习目标
+    addGoal(goal){const d=load();goal.id='g'+Date.now().toString(36);goal.startDate=Date.now();goal.done=false;d.goals.push(goal);save();return goal.id},
+    updateGoal(id,patch){const d=load();const g=d.goals.find(x=>x.id===id);if(g){Object.assign(g,patch);save()}},
+    removeGoal(id){const d=load();d.goals=d.goals.filter(g=>g.id!==id);save()},
+    getGoals(){const d=load();return d.goals.filter(g=>!g.done).sort((a,b)=>b.startDate-a.startDate)},
+    getActiveGoal(){const d=load();return d.goals.find(g=>!g.done&&g.startDate<=Date.now())}
   };
 })();

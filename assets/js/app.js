@@ -285,10 +285,15 @@ const App=(()=>{
     // 隐藏加载屏
     const ls=document.getElementById('loadingScreen');
     if(ls){ls.classList.add('done');setTimeout(()=>{if(ls.parentNode)ls.parentNode.removeChild(ls)},400);}
-    // 主题
+    // 主题 + 外观设置
     const s=DB.getSettings();
     document.documentElement.dataset.theme=s.theme;
+    document.documentElement.dataset.font=s.fontSize||'md';
+    document.documentElement.dataset.bg=s.bgTone||'default';
+    document.documentElement.dataset.motion=s.reduceMotion?'off':'on';
     document.getElementById('themeToggle').textContent=s.theme==='dark'?'☀️':'🌙';
+    // TTS 设置
+    if(s.ttsEnabled)TTS.toggle();
     // 打卡
     if(DB.checkin()){toast('📅 已打卡，连续 '+DB.getStreak()+' 天')}
     // 导航
@@ -337,7 +342,8 @@ const App=(()=>{
     const V={
       dashboard:renderDash,map:renderMap,practice:renderPractice,
       plan:renderPlan,lectures:renderLectures,wrong:renderWrong,review:renderReview,
-      reports:renderReports,badges:renderBadges,settings:renderSettings
+      reports:renderReports,badges:renderBadges,settings:renderSettings,
+      goals:renderGoals
     };
     main.innerHTML=(V[view]||renderDash)();
     // 绑定动态事件
@@ -366,6 +372,29 @@ const App=(()=>{
     // 在勋章视图渲染时处理
   }
 
+  // ★ 每日一言
+  const QUOTES=[
+    '你今天的每一道错题，都是考试时的每一分。','备考不是赛跑，是马拉松，配速比速度重要。',
+    '看懂解析的那一刻，你就比昨天强了一点。','题海战术不如精做一题，弄懂比做完更重要。',
+    '坚持是最朴素的通关秘籍。','模考不是终点，是发现薄弱点的起点。',
+    '每个正确答案背后，都是无数个错题的积累。','与其焦虑考试，不如多刷一题。',
+    '理解优先于记忆，记忆服务于理解。','今天的努力，是明天的从容。',
+    '错题不是失败，是路标——告诉你哪里需要加强。','分段学习比疲劳战术高效十倍。',
+    '能讲清楚的才是真懂——试着给自己讲一遍。','考试考的不是你会多少，是你不会的有没有学会。',
+    '专注 25 分钟胜过走神 2 小时。','休息也是学习的一部分，大脑在休息时整理记忆。',
+    '别追求完美，追求进步。','今天比昨天多做对一题，就是胜利。',
+    '备考路上，最难的是开始，最重要的是坚持。','把错题本当成你的私人教练。',
+    '每个考过副高的人，都曾和你一样在刷题。','理解一个概念，胜过背诵十遍。',
+    '考试是在特定时间、特定地点、集中注意力输出你平时的积累。','不要跳过解析，那才是精华。',
+    '反复错的题，换个角度学——画图、举例、教别人。','模考分数低？太好了，提前发现了问题。',
+    '学习区（80%能做对的题）进步最快。','难的不是题目，是克服不想做的那一刻。',
+    '把"我不会"变成"我还没学会"，心态就不一样了。','你不需要做到完美，你需要做到通过。'
+  ];
+  function dailyQuote(){
+    const day=Math.floor(Date.now()/86400000);
+    return QUOTES[day%QUOTES.length];
+  }
+
   // ===== 仪表盘 =====
   function renderDash(){
     const recs=DB.getRecords();const correct=recs.filter(r=>r.ok).length;
@@ -376,6 +405,7 @@ const App=(()=>{
     const days=examCountdown();
     const doneSet=new Set(recs.map(r=>r.qid)).size;
     return `
+    <div class="daily-quote">💬 ${dailyQuote()}</div>
     <div class="dash-hero">
       <h2>👋 欢迎备考，${DB.getStreak()>0?'已坚持 '+DB.getStreak()+' 天':'今天开始第一题'}</h2>
       <p class="hero-sub">放射医学技术（副高级）· 依据官方考纲编制 · 共 ${Q.length} 题</p>
@@ -464,7 +494,14 @@ const App=(()=>{
 
   // ===== 练习选择 =====
   function renderPractice(){
+    const activeGoal=DB.getActiveGoal();
     return `<div class="page-head"><h1>✍️ 开始刷题</h1><p>选择练习模式与筛选条件</p></div>
+    ${activeGoal?`<div class="card" style="background:var(--primary-l);border-color:var(--primary);margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><b style="color:var(--primary)">🎯 目标进行中</b> <span class="muted" style="font-size:12px">${activeGoal.name||'单元专攻'}</span></div>
+        <button class="btn btn-primary btn-sm" onclick="Quiz.start('goal',{units:${JSON.stringify(activeGoal.units)},count:15})">继续目标练习</button>
+      </div>
+    </div>`:''}
     <div class="mode-grid">
       <div class="mode-card" onclick="Quiz.start('free',{count:10})"><span class="mode-ico">✍️</span><h3>自由刷题</h3><p>10题·自适应·学习区优先</p></div>
       <div class="mode-card" onclick="Quiz.start('weak',{count:10})"><span class="mode-ico">🎯</span><h3>薄弱强化</h3><p>10题·针对薄弱单元</p></div>
@@ -585,7 +622,7 @@ const App=(()=>{
   function openLecture(u){lectureFocus=u;go('lectures')}
 
   // ===== 错题本 =====
-  let wrongFilter='all';
+  let wrongFilter='all';let wrongTab='list';
   function renderWrong(){
     const wrong=DB.getWrong();const arr=Object.entries(wrong).filter(([k,w])=>!w.mastered);
     const filt=arr.filter(([id,w])=>{
@@ -596,8 +633,44 @@ const App=(()=>{
       return q.u===wrongFilter;
     });
     let html=`<div class="page-head"><h1>📕 错题本</h1><p>共 ${arr.length} 道待攻克错题·支持筛选与导出</p></div>`;
+    // ★ 标签页切换
+    html+=`<div class="wrong-tabs">
+      <button class="filter-chip ${wrongTab==='list'?'active':''}" onclick="App.setWrongTab('list')">📋 错题列表</button>
+      <button class="filter-chip ${wrongTab==='reason'?'active':''}" onclick="App.setWrongTab('reason')">📊 错因分析</button>
+    </div>`;
+    if(wrongTab==='reason'){
+      // ★ 错因分析标签页
+      const stats=DB.getReasonStats();
+      const reasons=[
+        {code:'careless',label:'粗心失误',ico:'😅'},
+        {code:'concept',label:'概念混淆',ico:'🤔'},
+        {code:'misread',label:'审题不清',ico:'👀'},
+        {code:'unknown',label:'完全不会',ico:'😵'},
+        {code:'unlabeled',label:'未标记',ico:'❓'}
+      ];
+      const total=Object.values(stats).reduce((a,b)=>a+b,0)||1;
+      html+=`<div class="card"><h3 style="margin-bottom:12px">📊 错因分布</h3>`;
+      for(const r of reasons){
+        const count=stats[r.code]||0;
+        const pct=Math.round(count/total*100);
+        if(count===0&&r.code!=='unlabeled')continue;
+        html+=`<div class="reason-row">
+          <span class="rr-ico">${r.ico}</span>
+          <span class="rr-label">${r.label}</span>
+          <span class="rr-count">${count}题</span>
+          <div class="rr-bar"><div class="rr-bar-fill" style="width:${pct}%"></div></div>
+          ${count>0?`<button class="btn btn-outline btn-sm" onclick="Quiz.start('reason',{reason:'${r.code}',count:20})">专项训练 ${count} 道</button>`:''}
+        </div>`;
+      }
+      html+=`<div class="detail-list" style="margin-top:14px;font-size:12px">
+        <b>💡 建议</b>：粗心失误→放慢审题速度；概念混淆→重读讲义；审题不清→注意关键词标记；完全不会→从基础学起。
+      </div></div>`;
+      return html;
+    }
+    // 原有列表视图
     html+=`<div class="list-toolbar">
       <button class="btn btn-outline btn-sm" onclick="App.exportWrong()">⬇️ 导出错题</button>
+      <button class="btn btn-outline btn-sm" onclick="App.exportWrongPrint()">🖨️ A4打印</button>
       <button class="btn btn-ghost btn-sm" onclick="Quiz.start('memorize',{count:20})">📖 背题模式复习</button>
       <span style="flex:1"></span>
       <button class="filter-chip ${wrongFilter==='all'?'active':''}" onclick="App.setWrongFilter('all')">全部</button>
@@ -673,6 +746,123 @@ const App=(()=>{
     return html+`</div>`;
   }
 
+  // ===== 学习目标管理 =====
+  function renderGoals(){
+    const goals=DB.getGoals();
+    const active=DB.getActiveGoal();
+    let html=`<div class="page-head"><h1>🎯 学习目标</h1><p>设定目标，系统自动重组题目和计划</p></div>`;
+    // 当前活跃目标
+    if(active){
+      const elapsed=Math.floor((Date.now()-active.startDate)/86400000);
+      const remaining=active.targetDays-elapsed;
+      const unitNames=(active.units||[]).map(u=>{const un=UNITS.find(x=>x[0]===u);return un?un[1]:u});
+      const recs=DB.getRecords().filter(r=>active.units.includes(r.u));
+      const done=new Set(recs.map(r=>r.qid)).size;
+      const correct=recs.filter(r=>r.ok).length;
+      const acc=recs.length?Math.round(correct/recs.length*100):0;
+      html+=`<div class="card" style="background:var(--primary-l);border-color:var(--primary)">
+        <div style="display:flex;justify-content:space-between;align-items:start">
+          <div>
+            <h3 style="color:var(--primary)">📌 当前目标：${active.name||unitNames.join('、')}</h3>
+            <p class="muted" style="font-size:13px;margin-top:4px">进度：第 ${elapsed}/${active.targetDays} 天 · 已练 ${recs.length} 题 · 正确率 ${acc}%</p>
+            ${remaining<=0?`<p style="color:var(--warn);margin-top:6px">⚠️ 目标已到期，建议标记完成或调整</p>`:`<p class="muted" style="font-size:12px;margin-top:4px">预计完成：还有 ${remaining} 天</p>`}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <button class="btn btn-primary btn-sm" onclick="Quiz.start('goal',{units:${JSON.stringify(active.units)},count:15})">继续练习</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.completeGoal('${active.id}')">标记完成</button>
+            <button class="btn btn-danger btn-sm" onclick="App.deleteGoal('${active.id}')">删除</button>
+          </div>
+        </div>
+      </div>`;
+    }else{
+      html+=`<div class="card" style="text-align:center;padding:24px">
+        <div style="font-size:36px;margin-bottom:8px">🎯</div>
+        <p class="muted" style="margin-bottom:14px">设定一个短期目标，系统会自动推荐相关题目</p>
+      </div>`;
+    }
+    // 创建新目标
+    html+=`<div class="section-title">➕ 创建新目标</div>`;
+    html+=`<div class="card">
+      <div class="goal-form">
+        <div class="gf-row">
+          <label>目标类型</label>
+          <select id="goalType" onchange="App.updateGoalForm()">
+            <option value="unit">单元专攻</option>
+            <option value="weak">弱点突破</option>
+            <option value="type">题型专练</option>
+          </select>
+        </div>
+        <div class="gf-row" id="goalUnitsRow">
+          <label>选择单元</label>
+          <div class="gf-units">${UNITS.map(([u,name])=>`<label class="gf-unit"><input type="checkbox" value="${u}"> ${u}.${name}</label>`).join('')}</div>
+        </div>
+        <div class="gf-row" id="goalTypeRow" style="display:none">
+          <label>题型</label>
+          <select id="goalTypeSel">
+            <option value="案例分析题">案例分析题</option>
+            <option value="多选题">多选题</option>
+            <option value="共用题干题">共用题干题</option>
+            <option value="单选题">单选题</option>
+          </select>
+        </div>
+        <div class="gf-row">
+          <label>目标天数</label>
+          <input type="number" id="goalDays" value="14" min="3" max="90" style="width:80px">
+        </div>
+        <div class="gf-row">
+          <label>目标正确率（%）</label>
+          <input type="number" id="goalAcc" value="75" min="50" max="100" style="width:80px">
+        </div>
+        <button class="btn btn-primary" onclick="App.createGoal()">创建目标</button>
+      </div>
+    </div>`;
+    return html;
+  }
+  function updateGoalForm(){
+    const type=document.getElementById('goalType').value;
+    document.getElementById('goalUnitsRow').style.display=type==='unit'||type==='weak'?'':'none';
+    document.getElementById('goalTypeRow').style.display=type==='type'?'':'none';
+    // 弱点突破：自动勾选最弱单元
+    if(type==='weak'){
+      const weak=Report.weakList().slice(0,3);
+      const weakUnits=new Set(weak.map(w=>w.u));
+      document.querySelectorAll('.gf-unit input').forEach(cb=>{
+        cb.checked=weakUnits.has(cb.value);
+      });
+    }
+  }
+  function createGoal(){
+    const type=document.getElementById('goalType').value;
+    const days=+document.getElementById('goalDays').value||14;
+    const acc=+document.getElementById('goalAcc').value||75;
+    let units=[],name='';
+    if(type==='type'){
+      const t=document.getElementById('goalTypeSel').value;
+      units=Q.filter(q=>q.t===t).map(q=>q.u);
+      units=[...new Set(units)];
+      name=`${t}专项`;
+    }else{
+      units=[...document.querySelectorAll('.gf-unit input:checked')].map(cb=>cb.value);
+      if(!units.length){toast('请至少选择一个单元');return}
+      if(type==='weak')name='弱点突破';
+      else name='单元专攻';
+    }
+    DB.addGoal({type,units,targetDays:days,targetAcc:acc,name});
+    toast('✅ 目标已创建');
+    render();
+  }
+  function completeGoal(id){
+    DB.updateGoal(id,{done:true});
+    toast('🎉 目标完成！恭喜');
+    render();
+  }
+  function deleteGoal(id){
+    if(!confirm('确定删除此目标？'))return;
+    DB.removeGoal(id);
+    toast('已删除');
+    render();
+  }
+
   // ===== 设置 =====
   function renderSettings(){
     const s=DB.getSettings();
@@ -686,6 +876,28 @@ const App=(()=>{
       <h3 style="margin-bottom:12px">🎯 学习设置</h3>
       <div class="setting-row"><div class="sr-info"><h4>考试日期</h4><p>设置后仪表盘显示倒计时，自动生成备考计划</p></div><div><input type="date" value="${s.examDate||''}" style="padding:6px;border:1px solid var(--border-2);border-radius:6px;background:var(--surface);color:var(--text)" onchange="App.setExamDate(this.value)"></div></div>
       <div class="setting-row"><div class="sr-info"><h4>自动下一题</h4><p>提交答案后自动跳转下一题，刷题更快</p></div><div class="toggle ${s.autoNext?'on':''}" onclick="App.toggleAutoNext()"></div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px">♿ 无障碍与舒适度</h3>
+      <div class="setting-row"><div class="sr-info"><h4>字体大小</h4><p>调整全局字体大小</p></div><div>
+        <select onchange="App.setFontSize(this.value)" style="padding:6px;border:1px solid var(--border-2);border-radius:6px;background:var(--surface);color:var(--text)">
+          <option value="sm" ${s.fontSize==='sm'?'selected':''}>小 (14px)</option>
+          <option value="md" ${s.fontSize==='md'||!s.fontSize?'selected':''}>标准 (15px)</option>
+          <option value="lg" ${s.fontSize==='lg'?'selected':''}>大 (17px)</option>
+          <option value="xl" ${s.fontSize==='xl'?'selected':''}>超大 (19px)</option>
+        </select>
+      </div></div>
+      <div class="setting-row"><div class="sr-info"><h4>背景色调</h4><p>护眼模式，减少视觉疲劳</p></div><div>
+        <select onchange="App.setBgTone(this.value)" style="padding:6px;border:1px solid var(--border-2);border-radius:6px;background:var(--surface);color:var(--text)">
+          <option value="default" ${s.bgTone==='default'||!s.bgTone?'selected':''}>标准</option>
+          <option value="green" ${s.bgTone==='green'?'selected':''}>护眼绿</option>
+          <option value="cream" ${s.bgTone==='cream'?'selected':''}>米色</option>
+        </select>
+      </div></div>
+      <div class="setting-row"><div class="sr-info"><h4>显示倒计时</h4><p>模考时显示计时器</p></div><div class="toggle ${s.showTimer!==false?'on':''}" onclick="App.toggleShowTimer()"></div></div>
+      <div class="setting-row"><div class="sr-info"><h4>减少动效</h4><p>禁用过渡动画，适合低性能设备</p></div><div class="toggle ${s.reduceMotion?'on':''}" onclick="App.toggleReduceMotion()"></div></div>
+      <div class="setting-row"><div class="sr-info"><h4>选项随机排列</h4><p>打乱选项顺序，防止背诵位置</p></div><div class="toggle ${s.shuffleOpts?'on':''}" onclick="App.toggleShuffleOpts()"></div></div>
+      <div class="setting-row"><div class="sr-info"><h4>模考前呼吸引导</h4><p>模考前15秒呼吸放松练习</p></div><div class="toggle ${s.breathingGuide!==false?'on':''}" onclick="App.toggleBreathingGuide()"></div></div>
     </div>
     <div class="card">
       <h3 style="margin-bottom:12px">数据管理</h3>
@@ -731,9 +943,61 @@ const App=(()=>{
   // ===== 事件绑定与工具 =====
   function bindEvents(){}
   function setWrongFilter(f){wrongFilter=f;render()}
+  function setWrongTab(t){wrongTab=t;render()}
   function setDailyTarget(v){DB.setSetting('dailyTarget',Math.max(5,Math.min(100,+v||30)));toast('已设置每日目标 '+v+' 题')}
   function setExamDate(v){DB.setSetting('examDate',v||null);toast(v?'✅ 考试日期已设置，将自动生成备考计划':'已清除考试日期');render()}
   function toggleAutoNext(){const s=DB.getSettings();const nv=!s.autoNext;DB.setSetting('autoNext',nv);toast(nv?'✅ 已开启自动下一题':'已关闭自动下一题');render()}
+  // ★ 无障碍设置
+  function setFontSize(v){DB.setSetting('fontSize',v);document.documentElement.dataset.font=v;toast('字体大小已设置');render()}
+  function setBgTone(v){DB.setSetting('bgTone',v);document.documentElement.dataset.bg=v;toast('背景色调已设置');render()}
+  function toggleShowTimer(){const s=DB.getSettings();const nv=s.showTimer===false;DB.setSetting('showTimer',nv);toast(nv?'已显示倒计时':'已隐藏倒计时');render()}
+  function toggleReduceMotion(){const s=DB.getSettings();const nv=!s.reduceMotion;DB.setSetting('reduceMotion',nv);document.documentElement.dataset.motion=nv?'off':'on';toast(nv?'已减少动效':'已恢复动效');render()}
+  function toggleShuffleOpts(){const s=DB.getSettings();const nv=!s.shuffleOpts;DB.setSetting('shuffleOpts',nv);toast(nv?'已开启选项随机':'已关闭选项随机');render()}
+  function toggleBreathingGuide(){const s=DB.getSettings();const nv=s.breathingGuide===false;DB.setSetting('breathingGuide',nv);toast(nv?'已开启呼吸引导':'已关闭呼吸引导');render()}
+  // ★ A4打印导出
+  function exportWrongPrint(){
+    const wrong=DB.getWrong();const ids=Object.keys(wrong).filter(k=>!wrong[k].mastered);
+    if(!ids.length){toast('错题本为空');return}
+    const w=window.open('','_blank');
+    let html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>错题本打印 - ${new Date().toLocaleDateString()}</title>
+    <style>
+    @page{size:A4;margin:15mm 12mm}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.8;color:#333}
+    .print-header{text-align:center;border-bottom:2px solid #0e7c7b;padding-bottom:10px;margin-bottom:16px}
+    .print-header h1{font-size:18px;color:#0e7c7b}
+    .print-header p{font-size:11px;color:#999;margin-top:4px}
+    .q-item{page-break-inside:avoid;margin-bottom:18px;border:1px solid #e0e0e0;border-radius:6px;padding:12px}
+    .q-meta{font-size:11px;color:#888;margin-bottom:6px}
+    .q-stem{font-size:13px;font-weight:500;margin-bottom:8px}
+    .q-opts{margin-bottom:8px}
+    .q-opt{padding:2px 0 2px 20px;text-indent:-20px}
+    .q-blank{border-bottom:1px dashed #ccc;display:inline-block;width:60px;margin:0 4px}
+    .q-answer{font-size:11px;color:#666;margin-top:6px;padding-top:6px;border-top:1px dashed #e0e0e0}
+    .notes-area{margin-top:8px;border:1px dashed #ccc;border-radius:4px;height:50px}
+    .notes-label{font-size:10px;color:#aaa;margin-bottom:2px}
+    </style></head><body>
+    <div class="print-header">
+      <h1>放射医学技术副高 · 我的错题本</h1>
+      <p>导出日期：${new Date().toLocaleDateString()} · 共 ${ids.length} 题</p>
+    </div>`;
+    ids.forEach((id,i)=>{
+      const q=Q.find(x=>x.id===id);if(!q)return;
+      const opts=q.o||q['选项']||{};
+      html+=`<div class="q-item">
+        <div class="q-meta">第 ${i+1} 题 · ${q.t||q['题型']} · ${q.d||q['难度']} · ${q.un||q['单元名']||''}</div>
+        <div class="q-stem">${esc(q.s||q['题干'])}</div>
+        <div class="q-opts">${'ABCDE'.split('').map(k=>opts[k]?`<div class="q-opt">${k}. ${opts[k]}</div>`:'').join('')}</div>
+        <div class="q-answer">正确答案：______ 我的答案：______ 错误次数：${wrong[id].count}</div>
+        <div class="notes-label">📝 笔记区：</div>
+        <div class="notes-area"></div>
+      </div>`;
+    });
+    html+=`</body></html>`;
+    w.document.write(html);
+    w.document.close();
+    setTimeout(()=>{w.print();toast('已打开打印预览')},500);
+  }
   function previewQuestion(id){
     const q=Q.find(x=>x.id===id);if(!q)return;
     const dmap={'易':'tag-easy','中':'tag-mid','难':'tag-hard'};
@@ -887,6 +1151,9 @@ const App=(()=>{
   }
   function resetData(){if(confirm('⚠️ 确定要清除所有答题记录、错题本、勋章与段位吗？此操作不可恢复！')){DB.reset();toast('已重置全部数据');setTimeout(()=>location.reload(),500)}}
   function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-  return {init,go,render,toast,toggleTheme,setWrongFilter,setDailyTarget,setExamDate,toggleAutoNext,openLecture,previewQuestion,markMastered,exportData,importData,exportWrong,resetData,doLogout,showLock,showAdminPanel,createShareAction,viewShareStats,toggleShareAction,deleteShareAction,switchUser,addUser,selectUser};
+  return {init,go,render,toast,toggleTheme,setWrongFilter,setDailyTarget,setExamDate,toggleAutoNext,openLecture,previewQuestion,markMastered,exportData,importData,exportWrong,resetData,doLogout,showLock,showAdminPanel,createShareAction,viewShareStats,toggleShareAction,deleteShareAction,switchUser,addUser,selectUser,
+    // ★ 新增
+  setFontSize,setBgTone,toggleShowTimer,toggleReduceMotion,toggleShuffleOpts,toggleBreathingGuide,
+  exportWrongPrint,setWrongTab,updateGoalForm,createGoal,completeGoal,deleteGoal};
 })();
 document.addEventListener('DOMContentLoaded',App.init);

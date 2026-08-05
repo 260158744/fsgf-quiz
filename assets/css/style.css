@@ -859,3 +859,181 @@ input,textarea,[contenteditable]{
   /* 键盘弹出时不遮挡 */
   .quiz-overlay{height:100dvh;height:100vh}
 }
+
+/* ============================================= */
+/* ===== 体验升级 V2 新增样式 ===== */
+/* ============================================= */
+
+/* ★ 字体大小控制 */
+html[data-font="sm"]{font-size:14px}
+html[data-font="md"]{font-size:15px}
+html[data-font="lg"]{font-size:17px}
+html[data-font="xl"]{font-size:19px}
+
+/* ★ 背景色调控制 */
+html[data-bg="green"] body{background:#c7edcc}
+html[data-bg="green"] .topbar,html[data-bg="green"] .sidebar{background:#e8f5e8}
+html[data-bg="cream"] body{background:#f5f0e8}
+html[data-bg="cream"] .topbar,html[data-bg="cream"] .sidebar{background:#faf5ed}
+
+/* ★ 减少动效 */
+html[data-motion="off"] *{transition:none!important;animation:none!important}
+
+/* ★ 每日一言 */
+.daily-quote{
+  background:var(--primary-l);border-left:3px solid var(--primary);
+  border-radius:8px;padding:10px 14px;margin-bottom:14px;
+  font-size:13px;color:var(--text-2);font-style:italic;
+}
+
+/* ★ 鼓励文案 */
+.encourage{
+  font-size:12px;color:var(--text-2);padding:4px 8px;
+  background:var(--primary-ll);border-radius:6px;margin-top:4px;line-height:1.5;
+}
+
+/* ★ 自我归因选项 */
+.attribution-box{margin-top:10px;padding:10px;background:var(--surface-2);border-radius:8px}
+.attr-title{font-size:12px;color:var(--text-2);margin-bottom:6px}
+.attr-tags{display:flex;flex-wrap:wrap;gap:6px}
+.attr-tag{
+  padding:5px 10px;border:1px solid var(--border-2);border-radius:16px;
+  font-size:11px;cursor:pointer;transition:.15s;background:var(--surface);
+}
+.attr-tag:hover{border-color:var(--primary);color:var(--primary)}
+.attr-tag.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+/* ★ 呼吸引导浮层 */
+.breathing-overlay{
+  position:fixed;inset:0;background:rgba(15,22,32,.85);z-index:200;
+  display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px);
+}
+.breathing-content{text-align:center;color:#fff}
+.breathing-title{font-size:24px;font-weight:700;margin-bottom:4px}
+.breathing-subtitle{font-size:13px;color:rgba(255,255,255,.7);margin-bottom:30px}
+.breathing-circle{position:relative;width:200px;height:200px;margin:0 auto 20px}
+.breathing-ring{
+  position:absolute;inset:0;border:3px solid rgba(255,255,255,.2);
+  border-radius:50%;transition:transform 4s ease-in-out;
+}
+.breathing-ring-2{inset:30px;border-color:rgba(255,255,255,.1)}
+.breathing-ring.breathing-inhale{transform:scale(1.15);border-color:rgba(45,212,191,.5)}
+.breathing-ring.breathing-exhale{transform:scale(.9)}
+.breathing-text{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:18px;font-weight:600;
+}
+.breathing-hint{font-size:12px;color:rgba(255,255,255,.5);margin-bottom:16px}
+.breathing-skip{color:rgba(255,255,255,.6);font-size:12px}
+
+/* ★ 休息提醒面板 */
+.rest-overlay{
+  position:fixed;inset:0;background:rgba(15,22,32,.8);z-index:200;
+  display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);
+}
+.rest-overlay.rest-timing{background:rgba(15,22,32,.9)}
+.rest-panel{
+  background:var(--surface);border-radius:16px;padding:28px 32px;
+  text-align:center;max-width:340px;box-shadow:var(--shadow-lg);
+}
+.rest-ico{font-size:48px;margin-bottom:10px}
+.rest-panel h3{font-size:18px;margin-bottom:8px}
+.rest-msg{font-size:13px;color:var(--text-2);margin-bottom:18px;line-height:1.6}
+.rest-actions{display:flex;gap:10px;justify-content:center}
+.rest-countdown{font-size:36px;font-weight:700;color:var(--primary);margin:14px 0}
+
+/* ★ 正向报告 */
+.positive-report{
+  background:var(--success-l);border:1px solid var(--success);
+  border-radius:10px;padding:14px;margin-top:16px;text-align:left;
+}
+.pr-title{font-size:16px;font-weight:700;color:var(--success);margin-bottom:8px}
+.pr-item{font-size:13px;color:var(--text-2);padding:4px 0;line-height:1.6}
+.pr-weak{font-size:12px;color:var(--warn);margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)}
+
+/* ★ 「问老师」UI */
+.ask-teacher{
+  margin-top:10px;padding:10px;background:var(--surface-2);border-radius:8px;
+}
+.at-title{font-size:12px;color:var(--text-2);margin-bottom:6px}
+.at-actions{display:flex;gap:8px}
+.at-marked{background:var(--success-l)!important;color:var(--success)!important;border-color:var(--success)!important}
+
+/* ★ 费曼检验 */
+.feynman-box{
+  margin-top:12px;padding:14px;background:var(--info-l);
+  border:1px solid var(--info);border-radius:10px;
+}
+.fm-title{font-size:14px;font-weight:700;color:var(--info);margin-bottom:8px}
+.fm-q{font-size:13px;color:var(--text-2);margin-bottom:6px;padding:6px;background:var(--surface);border-radius:6px}
+.fm-hint{font-size:12px;color:var(--text-3);margin-bottom:8px}
+.fm-input{
+  width:100%;padding:8px 10px;border:1px solid var(--border-2);border-radius:8px;
+  background:var(--surface);color:var(--text);font-size:13px;resize:vertical;
+}
+.fm-actions{display:flex;gap:8px;margin-top:8px}
+.fm-feedback{
+  margin-top:8px;padding:8px;background:var(--surface);border-radius:6px;
+  font-size:13px;color:var(--text-2);line-height:1.6;
+}
+
+/* ★ 答题工具栏 */
+.quiz-tools{
+  position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:6px;z-index:10;
+}
+.quiz-tool{
+  width:36px;height:36px;border-radius:50%;background:var(--surface);
+  display:grid;place-items:center;font-size:16px;box-shadow:var(--shadow);
+  border:1px solid var(--border);transition:.15s;
+}
+.quiz-tool:hover{border-color:var(--primary);color:var(--primary)}
+.quiz-tool.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+/* ★ 草稿纸面板 */
+#sketchPanel{
+  position:fixed;bottom:0;right:0;width:320px;height:300px;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px 0 0 0;
+  z-index:90;transform:translateY(100%);transition:transform .3s;
+  display:flex;flex-direction:column;
+}
+#sketchPanel.show{transform:translateY(0)}
+.sketch-header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:6px 10px;border-bottom:1px solid var(--border);
+}
+.sketch-header b{font-size:13px}
+.sketch-tools{display:flex;gap:4px;align-items:center}
+.sketch-tool{padding:2px 6px;font-size:12px;border-radius:4px;cursor:pointer}
+.sketch-tool:hover{background:var(--surface-2)}
+#sketchCanvas{flex:1;cursor:crosshair;touch-action:none}
+
+/* ★ 学习目标 */
+.goal-form{display:flex;flex-direction:column;gap:12px}
+.gf-row{display:flex;align-items:center;gap:10px}
+.gf-row label{font-size:13px;min-width:90px;flex-shrink:0}
+.gf-row select,.gf-row input{
+  padding:6px 10px;border:1px solid var(--border-2);border-radius:6px;
+  background:var(--surface);color:var(--text);font-size:13px;
+}
+.gf-units{display:flex;flex-wrap:wrap;gap:6px}
+.gf-unit{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:4px 8px;border:1px solid var(--border);border-radius:6px;
+  font-size:12px;cursor:pointer;
+}
+.gf-unit:has(input:checked){background:var(--primary-l);border-color:var(--primary);color:var(--primary)}
+
+/* ★ 错题本标签页 */
+.wrong-tabs{display:flex;gap:6px;margin-bottom:12px}
+.reason-row{
+  display:flex;align-items:center;gap:10px;padding:8px 0;
+  border-bottom:1px solid var(--border);
+}
+.rr-ico{font-size:18px;width:24px;text-align:center}
+.rr-label{font-size:13px;min-width:80px}
+.rr-count{font-size:13px;color:var(--text-2);min-width:50px}
+.rr-bar{flex:1;height:8px;background:var(--surface-3);border-radius:4px;overflow:hidden}
+.rr-bar-fill{height:100%;background:var(--primary);border-radius:4px;transition:width .3s}
+
+/* ★ 答题区工具按钮定位 */
+.quiz-body{position:relative}
