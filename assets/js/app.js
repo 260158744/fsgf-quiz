@@ -1231,7 +1231,10 @@ const App=(()=>{
     return m;
   }
   let tbkOpenPart=null;   // 当前展开的篇（按需渲染，避免一次性输出 400KB HTML）
-  function toggleBookPart(name){ tbkOpenPart = (tbkOpenPart===name)?null:name; render(); }
+  let tbkPartLimit={};    // 每篇已展开的节数量上限（绪论篇 647 节，需分页避免单次输出 ~225KB）
+  const TBK_PAGE=30;      // 单篇单次渲染节数上限（绪论含正文，30节≈12KB，加载更多后≈24KB，控制在 ~30KB 视图预算内）
+  function toggleBookPart(name){ tbkOpenPart = (tbkOpenPart===name)?null:name; if(tbkOpenPart!==name) delete tbkPartLimit[name]; render(); }
+  function bookLoadMore(name){ tbkPartLimit[name]=(tbkPartLimit[name]||TBK_PAGE)+TBK_PAGE; render(); }
   function renderTextbook(){
     const linked=textbookLinked();
     tbkIndex={};
@@ -1257,25 +1260,40 @@ const App=(()=>{
           <span class="tbk-part-meta">${chN}章 / ${secN}节</span>
         </h3>`;
       if(open){
-        let ci=0;
+        // 分页渲染：绪论篇有 647 节，全部输出会突破 ~30KB 视图预算，故按 TBK_PAGE 分批。
+        const shown0 = tbkPartLimit[part.name] || TBK_PAGE;
+        // 若本次是从答题跳转过来（带了焦点节），确保窗口展开到包含该节
+        let focusGi=-1;
+        if(textbookFocusSec){
+          let g=0;
+          for(const ch of (part.chapters||[])){ for(const s of (ch.sections||[])){ g++; if(s.title===textbookFocusSec){focusGi=g;break;} } if(focusGi>0)break; }
+        }
+        const shown = focusGi>shown0 ? focusGi : shown0;
+        let gi=0, moreLeft=false, anyVisible=false;
         for(const ch of (part.chapters||[])){
-          ci++;
-          html+=`<div class="tbk-chap"><h4>${esc(ch.title)}${ch.page?' <span class="tbk-pg">P.'+ch.page+'</span>':''}</h4>`;
-          let si=0;
+          let chapHtml=`<div class="tbk-chap"><h4>${esc(ch.title)}${ch.page?' <span class="tbk-pg">P.'+ch.page+'</span>':''}</h4>`;
+          let chVisible=false;
           for(const s of (ch.sections||[])){
-            si++;
-            const sid='tbk-'+pi+'-'+ci+'-'+si;
+            gi++;
+            if(gi>shown){ moreLeft=true; continue; }
+            chVisible=true; anyVisible=true;
+            const sid='tbk-'+pi+'-'+gi;
             tbkIndex[s.title]=sid;
             const key=part.name+'|'+ch.title+'|'+s.title;
             const n=(linked[key]||[]).length||(linked[part.name]||[]).length;
             const flash = (textbookFocusSec&&textbookFocusSec===s.title)?' tbk-flash':'';
-            html+=`<div class="tbk-sec${flash}" id="${sid}">
+            chapHtml+=`<div class="tbk-sec${flash}" id="${sid}">
               <div class="tbk-sec-h"><b>${esc(s.title)}</b>${s.page?' <span class="tbk-pg">P.'+s.page+'</span>':''} ${n?`<span class="tbk-count">${n}题关联</span>`:''}</div>
               ${s.body?`<div class="tbk-body">${esc(s.body)}</div>`:''}
               ${n?`<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="App.previewBookQuestions(${JSON.stringify(key).replace(/"/g,'&quot;')})">📝 查看 ${n} 道关联题目</button>`:''}
             </div>`;
           }
-          html+=`</div>`;
+          chapHtml+=`</div>`;
+          if(chVisible || !moreLeft) html+=chapHtml;   // 跳过完全落在窗口外的空章标题
+        }
+        if(moreLeft){
+          const remain=secN-shown;
+          html+=`<div class="tbk-more"><button class="btn btn-outline" onclick="App.bookLoadMore(${JSON.stringify(part.name).replace(/"/g,'&quot;')})">⬇ 加载更多章节（剩余 ${remain} 节）</button></div>`;
         }
       }
       html+=`</div>`;
@@ -1557,7 +1575,7 @@ const App=(()=>{
   setFontSize,setBgTone,toggleShowTimer,toggleReduceMotion,toggleShuffleOpts,toggleBreathingGuide,
   exportWrongPrint,setWrongTab,updateGoalForm,createGoal,completeGoal,deleteGoal,
     // ★ 双板块/教材/笔记/高频/自动出题
-    setSection,getSection,openBook,toggleBookPart,searchBook,openNote,saveNote,delNote,searchNotesLive,closeModal,previewBookQuestions,startByKp,
+    setSection,getSection,openBook,toggleBookPart,bookLoadMore,searchBook,openNote,saveNote,delNote,searchNotesLive,closeModal,previewBookQuestions,startByKp,
     setHotUnit,hotMore,practiceAllHot,renderTextbook,renderNotes,renderHot,renderAuto,genFromBank,genFromBook,importGenerated,practiceGenerated};
 })();
 document.addEventListener('DOMContentLoaded',App.init);
