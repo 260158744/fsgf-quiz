@@ -342,6 +342,10 @@ const Quiz=(()=>{
         scoreLevel = 'full'; scorePct = 100; ok = true;
       } else if (isMulti) {
         // 多选题/案例：检查是否有错选
+        // ★ 防御：空提交视为未作答 (0分)
+        if (!userAns) {
+          scoreLevel = 'zero'; scorePct = 0; ok = false;
+        } else {
         const hasWrongChoice = [...userSet].some(k => !correctSet.has(k));
         if (hasWrongChoice) {
           // C. 有错选 → 0分
@@ -349,6 +353,7 @@ const Quiz=(()=>{
         } else {
           // B. 无错选但有遗漏 → 部分得分（半分）
           scoreLevel = 'partial'; scorePct = 50; ok = false;
+        }
         }
       } else {
         // 单选不匹配 → 0分
@@ -526,14 +531,12 @@ const Quiz=(()=>{
   }
   // ★ 解析关键词高亮（考试高频术语）
   const KP_TERMS=['信噪比','对比噪声比','空间分辨力','密度分辨力','时间分辨力','窗宽','窗位','CT值','磁化转移','脂肪抑制','化学位移','磁敏感','涡流','梯度场','射频脉冲','重复时间','回波时间','反转时间','激励次数','视野','层厚','层间距','矩阵','带宽','压缩感知','并行采集','DICOM','PACS','RIS','DSA','CTA','MRA','MRCP','MRS','DWI','ADC','BOLD','T1WI','T2WI','FLAIR','GRE','SE','TSE','EPI','IR','MPR','MIP','VR','kV','mA','mAs','钆','碘对比剂','对比剂','半衰期','防护','屏蔽','准直器','滤线栅','增感屏','量子检出效率','调制传递函数','噪声等效量子','自动曝光控制','多平面重组','曲面重组'];
+  // ★ 按长度降序排列，防止短关键词在已高亮的 HTML 标签内二次匹配（如"对比剂"⊂"碘对比剂"、"IR"⊂"FLAIR"、"mA"⊂"mAs"）
+  const KP_SORTED=[...KP_TERMS].sort((a,b)=>b.length-a.length);
+  const KP_REGEX=new RegExp(KP_SORTED.map(t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'),'g');
   function hlKp(txt){
     if(!txt) return txt;
-    for(const t of KP_TERMS){
-      if(txt.includes(t)){
-        txt=txt.split(t).join(`<b class="hl-kp">${t}</b>`);
-      }
-    }
-    return txt;
+    return txt.replace(KP_REGEX,m=>`<b class="hl-kp">${m}</b>`);
   }
   // ★ P1-1 答错后推送同知识点相似题
   function renderSimilarCard(q, scoreInfo){

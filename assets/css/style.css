@@ -215,7 +215,7 @@ a{color:inherit;text-decoration:none}
   font-size:13px;font-weight:700;
 }
 .quiz-body{flex:1;overflow-y:auto;padding:24px;display:flex;justify-content:center}
-.quiz-body-inner{max-width:760px;width:100%}
+.quiz-body-inner{max-width:760px;width:100%;position:relative}
 .qmeta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .qstem{
   font-size:16px;line-height:1.7;margin-bottom:20px;font-weight:500;
