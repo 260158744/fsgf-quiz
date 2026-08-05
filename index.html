@@ -46,11 +46,6 @@
   <p>题库加载中...</p>
 </div>
 
-<!-- 网络状态提示 -->
-<div class="net-status offline" id="netStatus" hidden>
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
-  <span>离线模式 · 数据已本地缓存</span>
-</div>
 
 <!-- 顶部栏 -->
 <header class="topbar">
@@ -198,21 +193,21 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js')
       .then(function(reg) {
         console.log('[App] SW registered:', reg.scope);
-        // 更新检测：发现新版本时提示用户刷新
+        // 更新检测：发现新版本时静默激活，并在接管后自动刷新一次以加载最新页面。
+        // （不再弹出任何横幅/遮罩，避免遮挡界面）
+        var _pendingReload = false;
         reg.addEventListener('updatefound', function() {
           var newWorker = reg.installing;
           newWorker.addEventListener('statechange', function() {
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('[App] New SW available');
-              // 显示更新提示
-              var el = document.getElementById('netStatus');
-              el.className = 'net-status online show';
-              el.querySelector('span').innerHTML = '🔄 新版本已就绪，<a href="javascript:location.reload()" style="color:#fff;text-decoration:underline">点击刷新</a>';
-              el.hidden = false;
-              // 立即激活新SW
+              console.log('[App] New SW available, activating silently');
+              _pendingReload = true;
               newWorker.postMessage({ action: 'skipWaiting' });
             }
           });
+        });
+        navigator.serviceWorker.addEventListener('controllerchange', function() {
+          if (_pendingReload) { _pendingReload = false; console.log('[App] New SW controlling, reloading for latest'); location.reload(); }
         });
       })
       .catch(function(err) {
@@ -220,9 +215,6 @@ if ('serviceWorker' in navigator) {
       });
   });
 }
-
-// 网络状态横幅提醒已关闭：离线能力仍由 service worker 提供，仅不再弹窗。
-// （新版本就绪提示复用同一元素，保留不动）
 
 // ★ 全局错误可视化（排查时有用）
 window.addEventListener('error', function(e) {
