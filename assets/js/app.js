@@ -146,8 +146,8 @@ const App=(()=>{
       btn.disabled=false;btn.textContent='解锁进入';
     };
     inputEl.onkeydown=e=>{if(e.key==='Enter')btn.click()};
-    toggle.onclick=()=>{input.type=input.type==='password'?'text':'password'};
-    input.focus();
+    toggle.onclick=()=>{inputEl.type=inputEl.type==='password'?'text':'password'};
+    inputEl.focus();
 
     // 管理员入口（连续点击logo 5次）
     let adminClicks = 0;
@@ -1001,8 +1001,9 @@ const App=(()=>{
   function previewQuestion(id){
     const q=Q.find(x=>x.id===id);if(!q)return;
     const dmap={'易':'tag-easy','中':'tag-mid','难':'tag-hard'};
-    const goodM=q.ex.match(/【为什么对】([\s\S]*?)(?=【为什么错】|$)/);
-    const badM=q.ex.match(/【为什么错】([\s\S]*?)$/);
+    const ex=q.ex||'';
+    const goodM=ex.match(/【为什么对】([\s\S]*?)(?=【为什么错】|$)/);
+    const badM=ex.match(/【为什么错】([\s\S]*?)$/);
     const main=document.getElementById('main');
     main.innerHTML=`<div class="page-head"><h1>📖 题目详情</h1><button class="btn btn-ghost btn-sm" onclick="App.go('${view==='wrong'?'wrong':'review'}')">← 返回</button></div>
     <div class="card">
@@ -1051,8 +1052,15 @@ const App=(()=>{
     const card = document.getElementById('adminPanelCard');
     const content = document.getElementById('adminPanelContent');
     card.style.display = '';
-    const sys = await API.systemStatus();
-    const shares = await API.listShares();
+    let sys,shares;
+    try{
+      sys=await API.systemStatus();
+      shares=await API.listShares();
+    }catch(e){
+      sys={system:{total_questions:0,active_shares:0,total_sessions:0,total_records:0}};
+      shares={shares:[]};
+      toast('管理面板数据加载失败，使用本地模式');
+    }
 
     content.innerHTML = `
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">

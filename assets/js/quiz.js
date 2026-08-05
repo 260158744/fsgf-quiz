@@ -457,8 +457,8 @@ const Quiz=(()=>{
   function renderExplain(q,ok,userAns,correct,apiResult,scoreInfo){
     const box=document.getElementById('explainBox');
     // 优先使用后端返回的解析，其次用本地题目数据
-    const ex = (result && result.explanation) || q.ex || '';
-    const trap = (result && result.trap) || q.tr || '';
+    const ex = (apiResult && apiResult.explanation) || q.ex || '';
+    const trap = (apiResult && apiResult.trap) || q.tr || '';
     const goodM=ex.match(/【为什么对】([\s\S]*?)(?=【为什么错】|$)/);
     const badM=ex.match(/【为什么错】([\s\S]*?)$/);
 
