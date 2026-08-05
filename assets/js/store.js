@@ -27,7 +27,21 @@ const DB=(()=>{
     if(!cache.seen) cache.seen=[]; // 最近7天答过的qid
     return cache;
   }
-  function save(){localStorage.setItem(K(),JSON.stringify(cache))}
+  function save(){
+    try{localStorage.setItem(K(),JSON.stringify(cache))}
+    catch(e){
+      // localStorage 配额溢出（通常>5MB），清理旧记录后重试
+      if(e.name==='QuotaExceededError'||e.code===22||e.message.includes('quota')){
+        const d=load();
+        // 保留最近2000条记录，清空其余
+        if(d.records&&d.records.length>2000){
+          d.records=d.records.slice(-2000);
+          cache=d;
+          try{localStorage.setItem(K(),JSON.stringify(cache))}catch(e2){}
+        }
+      }
+    }
+  }
   // 能力图谱: 17单元×4认知维度=68维
   function keyAble(unit,cog){return unit+'|'+cog}
   function updAbility(unit,cog,correct){
