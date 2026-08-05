@@ -1266,8 +1266,8 @@ const App=(()=>{
             si++;
             const sid='tbk-'+pi+'-'+ci+'-'+si;
             tbkIndex[s.title]=sid;
-            const key=s.chapter?part.name+'|'+ch.title+'|'+s.title:part.name;
-            const n=(linked[key]||[]).length;
+            const key=part.name+'|'+ch.title+'|'+s.title;
+            const n=(linked[key]||[]).length||(linked[part.name]||[]).length;
             const flash = (textbookFocusSec&&textbookFocusSec===s.title)?' tbk-flash':'';
             html+=`<div class="tbk-sec${flash}" id="${sid}">
               <div class="tbk-sec-h"><b>${esc(s.title)}</b>${s.page?' <span class="tbk-pg">P.'+s.page+'</span>':''} ${n?`<span class="tbk-count">${n}题关联</span>`:''}</div>
@@ -1292,8 +1292,8 @@ const App=(()=>{
       for(const ch of (part.chapters||[])){
         for(const s of (ch.sections||[])){
           if(s.title.includes(kw)||ch.title.includes(kw)){
-            const key=s.chapter?part.name+'|'+ch.title+'|'+s.title:part.name;
-            hits.push({part:part.name,ch:ch.title,sec:s.title,page:s.page||ch.page,n:(linked[key]||[]).length,key});
+            const key=part.name+'|'+ch.title+'|'+s.title;
+            hits.push({part:part.name,ch:ch.title,sec:s.title,page:s.page||ch.page,n:(linked[key]||[]).length||(linked[part.name]||[]).length,key});
           }
           if(hits.length>=60)break;
         }
