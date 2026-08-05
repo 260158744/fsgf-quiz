@@ -221,26 +221,8 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// 网络状态检测
-function updateNetStatus() {
-  var el = document.getElementById('netStatus');
-  if (!navigator.onLine) {
-    el.hidden = false;
-    el.className = 'net-status offline show';
-    setTimeout(function() { el.className = 'net-status offline'; }, 3000);
-  } else {
-    el.hidden = true;
-  }
-}
-window.addEventListener('online', function() {
-  var el = document.getElementById('netStatus');
-  el.className = 'net-status online show';
-  el.querySelector('span').textContent = '网络已恢复';
-  el.hidden = false;
-  setTimeout(function() { el.hidden = true; }, 2000);
-});
-window.addEventListener('offline', updateNetStatus);
-document.addEventListener('DOMContentLoaded', updateNetStatus);
+// 网络状态横幅提醒已关闭：离线能力仍由 service worker 提供，仅不再弹窗。
+// （新版本就绪提示复用同一元素，保留不动）
 
 // ★ 全局错误可视化（排查时有用）
 window.addEventListener('error', function(e) {
