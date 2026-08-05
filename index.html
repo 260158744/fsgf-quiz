@@ -225,6 +225,13 @@ window.addEventListener('online', function() {
 });
 window.addEventListener('offline', updateNetStatus);
 document.addEventListener('DOMContentLoaded', updateNetStatus);
+
+// ★ 全局错误可视化（排查时有用）
+window.addEventListener('error', function(e) {
+  if (e.target && e.target.tagName === 'SCRIPT') {
+    console.error('Script load error:', e.target.src);
+  }
+});
 </script>
 
 <script src="assets/js/data/questions_public.js"></script>

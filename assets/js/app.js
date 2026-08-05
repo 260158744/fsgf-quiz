@@ -499,7 +499,7 @@ const App=(()=>{
     ${activeGoal?`<div class="card" style="background:var(--primary-l);border-color:var(--primary);margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div><b style="color:var(--primary)">🎯 目标进行中</b> <span class="muted" style="font-size:12px">${activeGoal.name||'单元专攻'}</span></div>
-        <button class="btn btn-primary btn-sm" onclick="Quiz.start('goal',{units:${JSON.stringify(activeGoal.units)},count:15})">继续目标练习</button>
+        <button class="btn btn-primary btn-sm" onclick="Quiz.start('goal',{units:${JSON.stringify(activeGoal.units).replace(/"/g,'&quot;')},count:15})">继续目标练习</button>
       </div>
     </div>`:''}
     <div class="mode-grid">
@@ -768,7 +768,7 @@ const App=(()=>{
             ${remaining<=0?`<p style="color:var(--warn);margin-top:6px">⚠️ 目标已到期，建议标记完成或调整</p>`:`<p class="muted" style="font-size:12px;margin-top:4px">预计完成：还有 ${remaining} 天</p>`}
           </div>
           <div style="display:flex;flex-direction:column;gap:4px">
-            <button class="btn btn-primary btn-sm" onclick="Quiz.start('goal',{units:${JSON.stringify(active.units)},count:15})">继续练习</button>
+            <button class="btn btn-primary btn-sm" onclick="Quiz.start('goal',{units:${JSON.stringify(active.units).replace(/"/g,'&quot;')},count:15})">继续练习</button>
             <button class="btn btn-ghost btn-sm" onclick="App.completeGoal('${active.id}')">标记完成</button>
             <button class="btn btn-danger btn-sm" onclick="App.deleteGoal('${active.id}')">删除</button>
           </div>
