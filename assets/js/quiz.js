@@ -316,6 +316,9 @@ const Quiz=(()=>{
       }
     }
 
+    // ★ 题面内嵌答案兜底(IMA 扩充题自带 a，无后端也能判分)
+    if (!correct && q.a) { correct = q.a; }
+
     // ★ 第三步：仍然没有答案 → 报错放行
     if (!correct) {
       App.toast('无法获取答案：网络不通且本地无离线数据，请连接网络后刷新页面');
@@ -406,8 +409,11 @@ const Quiz=(()=>{
       document.getElementById('quizFooter').innerHTML=`
         <div style="display:flex;flex-direction:column;gap:4px;width:100%">
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <div style="font-size:13px;font-weight:700;color:${resultColor}">
-              ${resultIcon} ${resultText} ${xpText}
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="font-size:13px;font-weight:700;color:${resultColor}">
+                ${resultIcon} ${resultText} ${xpText}
+              </div>
+              <button class="btn btn-ghost btn-sm ${DB.isFav(q.id)?'active':''}" id="favBtn" onclick="Quiz.toggleFav('${q.id}')"><span class="fav-label">${DB.isFav(q.id)?'已收藏':'收藏'}</span></button>
             </div>
             <button class="btn btn-primary" id="nextBtn" onclick="Quiz.next()">${isLast?'查看本场结果 →':'下一题 →'}</button>
           </div>
@@ -465,6 +471,20 @@ const Quiz=(()=>{
   }
   function renderExplain(q,ok,userAns,correct,apiResult,scoreInfo){
     const box=document.getElementById('explainBox');
+    const correctArr=[...correct.split('')].sort();
+    const userArr=[...userAns.split('')].sort();
+    // ★ 选项级对错高亮：答案解析核心——直观标出正确答案与误选项
+    try {
+      const correctSet=new Set(correct.split(''));
+      const pickedSet=new Set(userAns.split(''));
+      document.querySelectorAll('#optsBox .opt').forEach(o=>{
+        const k=o.dataset.k; if(!k) return;
+        o.classList.add('opt-revealed');
+        if(correctSet.has(k)) o.classList.add('opt-correct');
+        if(pickedSet.has(k) && !correctSet.has(k)) o.classList.add('opt-wrong');
+        if(pickedSet.has(k)) o.classList.add('opt-picked');
+      });
+    } catch(e){}
     // 优先使用后端返回的解析，其次用本地题目数据
     const ex = (apiResult && apiResult.explanation) || q.ex || '';
     const trap = (apiResult && apiResult.trap) || q.tr || '';
@@ -516,6 +536,11 @@ const Quiz=(()=>{
 
     box.innerHTML=`<div class="explain">
       ${scoreHTML}
+      <div class="explain-answer">
+        <span class="ea-label">✅ 正确答案</span>
+        <span class="ea-val">${correctArr.join(' / ')}</span>
+        <span class="ea-yours ${ok?'ok':'no'}">你的：${userArr.length?userArr.join(' / '):'未作答'}</span>
+      </div>
       <h4>💡 解析</h4>
       <div class="explain-body">
         ${goodM?`<p><span class="why-good">为什么对：</span>${hlKp(esc(goodM[1].trim()))}</p>`:''}
@@ -960,7 +985,14 @@ const Quiz=(()=>{
     App.toast(on?'听题模式已开启':'听题模式已关闭');
   }
 
+  function toggleFav(qid){
+    const added=DB.toggleFav(qid);
+    const btn=document.getElementById('favBtn');
+    if(btn){btn.classList.toggle('active',added);const lbl=btn.querySelector('.fav-label');if(lbl)lbl.textContent=added?'已收藏':'收藏'}
+    App.toast(added?'⭐ 已收藏':'已取消收藏');
+    if(App.updateFavCount)App.updateFavCount();
+  }
   return {start,exit,submit,next,skip,toggle,again,reviewMistakes,render,pick,weakPoints,cur,setReason,
     showBreathingGuide,encourageText,markConfused,askAbout,tryFeynman,submitFeynman,
-    showRestPanel,_restTimer,_resume,renderTools,toggleTTS};
+    showRestPanel,_restTimer,_resume,renderTools,toggleTTS,toggleFav};
 })();

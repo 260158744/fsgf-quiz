@@ -366,6 +366,7 @@ const App=(()=>{
   function toast(msg){const w=document.getElementById('toastWrap');const t=document.createElement('div');t.className='toast';t.textContent=msg;w.appendChild(t);setTimeout(()=>t.remove(),2500)}
 
   function render(){
+    if(window.Exam)Exam.cleanup(); // 切走视图时停止考试计时器，避免后台泄漏
     updateTopbar();updateLevelCard();updateBadges();
     const main=document.getElementById('main');
     const V={
@@ -373,11 +374,12 @@ const App=(()=>{
       plan:renderPlan,lectures:renderLectures,wrong:renderWrong,review:renderReview,
       reports:renderReports,badges:renderBadges,settings:renderSettings,
       goals:renderGoals,
-      textbook:renderTextbook,notes:renderNotes,hot:renderHot,auto:renderAuto
+      textbook:renderTextbook,notes:renderNotes,hot:renderHot,auto:renderAuto,fav:renderFav,exam:renderExam
     };
     main.innerHTML=(V[view]||renderDash)();
     // 绑定动态事件
     bindEvents();
+    updateFavCount();
   }
   function updateTopbar(){
     const recs=DB.getRecords();const correct=recs.filter(r=>r.ok).length;
@@ -761,6 +763,28 @@ const App=(()=>{
     return html;
   }
 
+  // ===== 收藏夹 =====
+  function renderFav(){
+    const ids=DB.getFavs();
+    let html=`<div class="page-head"><h1>⭐ 收藏夹</h1><p>共 ${ids.length} 道收藏题·可针对性重刷</p></div>`;
+    if(!ids.length){html+=`<div class="empty-state"><div class="es-ico">🌟</div><p>还没有收藏的题目</p><div class="muted" style="font-size:13px;margin-top:6px">答题后点击「收藏」即可加入</div></div>`;return html}
+    html+=`<div class="list-toolbar">
+      <button class="btn btn-outline btn-sm" onclick="Quiz.start('free',{ids:[${ids.map(i=>`'${i}'`).join(',')}],count:${ids.length}})">🚀 刷收藏题</button>
+      <span style="flex:1"></span>
+      <span class="muted" style="font-size:12px">点击卡片查看解析·可取消收藏</span>
+    </div>`;
+    ids.slice().reverse().forEach(id=>{
+      const q=Q.find(x=>x.id===id);if(!q)return;
+      const dmap={'易':'tag-easy','中':'tag-mid','难':'tag-hard'};
+      html+=`<div class="qitem" onclick="App.previewQuestion('${id}')">
+        <div class="qitem-head"><div class="qitem-stem">${esc(q.s)}</div></div>
+        <div class="qitem-meta"><span class="tag tag-type">${q.t}</span><span class="tag ${dmap[q.d]}">${q.d}</span><span class="tag tag-cog">${q.c}</span><span>${q.un}</span></div>
+        <div class="qitem-actions"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();App.previewQuestion('${id}')">查看解析</button><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();App.removeFav('${id}')">取消收藏</button></div>
+      </div>`;
+    });
+    return html;
+  }
+  function renderExam(){return Exam.open()}
   // ===== 报告 =====
   function renderReports(){
     const radar=Report.radarSVG();const growth=Report.growthSVG();const cog=Report.cogStats();const top=Report.topWrong(8);const weak=Report.weakList();
@@ -1069,8 +1093,12 @@ const App=(()=>{
     </div>`;
   }
   function markMastered(id){const w=DB.getWrong()[id];if(w){w.mastered=1;DB.save();toast('已标记为掌握');render()}}
+  // ★ 收藏夹
+  function toggleFav(id){const added=DB.toggleFav(id);toast(added?'⭐ 已收藏':'已取消收藏');updateFavCount();if(view==='fav')render()}
+  function removeFav(id){DB.removeFav(id);toast('已取消收藏');if(view==='fav')render();else updateFavCount()}
+  function updateFavCount(){const el=document.getElementById('favCount');if(el){const n=DB.favCount();el.textContent=n||'';el.style.display=n?'inline-block':'none'}}
   function exportData(){const data=DB.exportAll();const blob=new Blob([data],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='放射副高题库_数据备份_'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('已导出数据备份')}
-  function importData(){const i=document.createElement('input');i.type='file';i.accept='.json';i.onchange=e=>{const f=e.target.files[0];const r=new FileReader();r.onload=()=>{try{DB.importAll(r.result);toast('导入成功');render()}catch(err){toast('导入失败：文件格式错误')}};r.readAsText(f)};i.click()}
+  function importData(){const i=document.createElement('input');i.type='file';i.accept='.json';i.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{JSON.parse(r.result);if(!confirm('导入将覆盖当前全部答题记录、错题、收藏与设置，确定继续？'))return;DB.importAll(r.result);toast('导入成功');render()}catch(err){toast('导入失败：文件格式错误')}};r.readAsText(f)};i.click()}
   function exportWrong(){
     const wrong=DB.getWrong();const ids=Object.keys(wrong).filter(k=>!wrong[k].mastered);
     if(!ids.length){toast('错题本为空');return}
@@ -1212,7 +1240,36 @@ const App=(()=>{
   }
   function resetData(){if(confirm('⚠️ 确定要清除所有答题记录、错题本、勋章与段位吗？此操作不可恢复！')){DB.reset();toast('已重置全部数据');setTimeout(()=>location.reload(),500)}}
   function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-  function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+  // 教材正文渲染（纯展示层：只做排版，不改动任何原文内容）
+  // 技术篇正文来自考点笔记，含 Markdown 列表 / #### 小标题 / 竖线表格，
+  // 直接 esc 输出会挤成一坨，故在此还原换行、小标题与表格结构。
+  function bookBody(t){
+    const lines=String(t||'').split('\n');
+    let out='',tbl=null;
+    const flush=()=>{
+      if(tbl&&tbl.length){
+        out+='<table class="tbk-tb">'+tbl.map(r=>'<tr>'+r.map(c=>`<td>${esc(c)}</td>`).join('')+'</tr>').join('')+'</table>';
+      }
+      tbl=null;
+    };
+    for(const ln of lines){
+      const s=ln.trim();
+      if(/^\|.*\|$/.test(s)){
+        const cells=s.slice(1,-1).split('|').map(x=>x.trim());
+        if(cells.every(c=>c===''||/^:?-{2,}:?$/.test(c))) continue;  // 空行/分隔行
+        (tbl=tbl||[]).push(cells);
+        continue;
+      }
+      flush();
+      if(!s){ out+='<div class="tbk-gap"></div>'; continue; }
+      const h=s.match(/^#{3,6}\s*(.+)$/);
+      if(h){ out+=`<div class="tbk-h">${esc(h[1])}</div>`; continue; }
+      out+=`<div class="tbk-ln">${esc(s)}</div>`;
+    }
+    flush();
+    return out;
+  }
 
   // ================= 通用弹窗 =================
   function openModal(html){
@@ -1245,7 +1302,7 @@ const App=(()=>{
     const totalSec=TB.parts.reduce((a,p)=>a+(p.chapters||[]).reduce((b,c)=>b+(c.sections||[]).length,0),0);
     const totalLinked=Q.filter(q=>q.ref&&q.ref.篇).length;
     let html=`<div class="page-head"><h1>📖 教材 · 放射学高级教程</h1>
-      <p>高级卫生专业技术资格考试指导用书 · ${TB.parts.length}篇 / ${totalCh}章 / ${totalSec}节 · 当前板块 ${totalLinked} 道题已关联到具体章节页码</p></div>`;
+      <p>诊断各篇源自《放射学高级教程》指导用书；「技术篇」为影像技术考点笔记增补 · 共 ${TB.parts.length}篇 / ${totalCh}章 / ${totalSec}节 · 当前板块 ${totalLinked} 道题已关联到具体章节</p></div>`;
     html+=`<div class="tbk-search"><input id="tbkSearch" placeholder="🔍 搜索章节名称（如：颅脑CT、乳腺、心脏）" oninput="App.searchBook(this.value)"></div>
       <div id="tbkSearchResult"></div>`;
     let pi=0;
@@ -1284,7 +1341,7 @@ const App=(()=>{
             const flash = (textbookFocusSec&&textbookFocusSec===s.title)?' tbk-flash':'';
             chapHtml+=`<div class="tbk-sec${flash}" id="${sid}">
               <div class="tbk-sec-h"><b>${esc(s.title)}</b>${s.page?' <span class="tbk-pg">P.'+s.page+'</span>':''} ${n?`<span class="tbk-count">${n}题关联</span>`:''}</div>
-              ${s.body?`<div class="tbk-body">${esc(s.body)}</div>`:''}
+              ${s.body?`<div class="tbk-body">${bookBody(s.body)}</div>`:''}
               ${n?`<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="App.previewBookQuestions(${JSON.stringify(key).replace(/"/g,'&quot;')})">📝 查看 ${n} 道关联题目</button>`:''}
             </div>`;
           }
@@ -1464,6 +1521,7 @@ const App=(()=>{
 
   // ================= 自动出题工具（功能5） =================
   let autoGenCache=[];
+  let autoBookMode='single';   // single=单概念辨析 / pair=成对易混辨析 (#72)
   function renderAuto(){
     const UNITS2=[['一','人体断面影像解剖'],['二','医学物理基础'],['三','医学影像设备与成像原理'],['四','对比剂'],['五','影像质量管理'],['六','数字X线成像基础'],['七','影像诊断学基础'],['八','普通X线检查技术'],['九','CT检查技术'],['十','MR检查技术'],['十一','DSA检查技术'],['十二','PACS技术'],['十三','图像打印技术'],['十四','数字X线技术进展'],['十五','DSA技术进展'],['十六','CT技术进展'],['十七','MR技术进展']];
     const unitOpts=UNITS2.map(([u,n])=>`<option value="${u}">${u}、${n}</option>`).join('');
@@ -1485,6 +1543,11 @@ const App=(()=>{
         <button class="btn btn-primary" onclick="App.genFromBank()">🔍 从题库筛选生成</button>
         <button class="btn btn-outline" onclick="App.genFromBook()">📖 从教材知识点生成</button>
       </div>
+      <div class="auto-bookmode">
+        <span class="muted" style="font-size:12px">教材生成模式：</span>
+        <button class="filter-chip ${autoBookMode==='single'?'active':''}" data-m="single" onclick="App.setBookMode('single')">📘 单概念辨析</button>
+        <button class="filter-chip ${autoBookMode==='pair'?'active':''}" data-m="pair" onclick="App.setBookMode('pair')">🔗 成对易混辨析</button>
+      </div>
       <div id="autoResult"></div>
     </div>`;
     return html;
@@ -1505,8 +1568,10 @@ const App=(()=>{
     autoGenCache=shuffle(pool).slice(0,cnt);
     showGenResult('题库筛选');
   }
+  function setBookMode(m){autoBookMode=m;document.querySelectorAll('.auto-bookmode .filter-chip').forEach(b=>b.classList.toggle('active',b.dataset.m===m));}
   function genFromBook(){
     // 从教材「基础概念」篇的原文定义生成概念辨析题（答案与解析均出自教材原文，不虚构医学结论）
+    if(autoBookMode==='pair') return genFromBookPair();
     const base=getPart0();
     if(!base){document.getElementById('autoResult').innerHTML='<p class="muted">教材基础概念数据缺失</p>';return;}
     const secs=[];
@@ -1546,6 +1611,50 @@ const App=(()=>{
     if(!autoGenCache.length){document.getElementById('autoResult').innerHTML='<p class="muted">可用条目不足，请减少数量后重试</p>';return;}
     showGenResult('教材原文（概念辨析）');
   }
+  function genFromBookPair(){
+    // #72 成对易混辨析：同章内取两个相近概念，正确项为其教材原文首句，干扰项为他概念原文首句（均出自教材，不虚构医学结论）
+    const base=getPart0();
+    if(!base){document.getElementById('autoResult').innerHTML='<p class="muted">教材基础概念数据缺失</p>';return;}
+    const allSecs=[]; const groups={};
+    for(const ch of base.chapters){
+      const secs=ch.sections.filter(s=>s.body&&s.body.length>=18);
+      if(secs.length>=2) groups[ch.title]=secs;
+      for(const s of secs) allSecs.push(s);
+    }
+    if(!Object.keys(groups).length){document.getElementById('autoResult').innerHTML='<p class="muted">教材可用成对待辨析条目不足</p>';return;}
+    const frag=s=>{const sent=(s.body.split(/[。；]/)[0]||s.body).trim();return sent.length>80?sent.slice(0,80)+'…':sent;};
+    const LETTERS=['A','B','C','D'];
+    const pairs=[];
+    for(const cn of Object.keys(groups)){
+      const secs=groups[cn];
+      for(let i=0;i<secs.length;i++)for(let j=i+1;j<secs.length;j++)pairs.push([secs[i],secs[j]]);
+    }
+    const cnt=Math.min(parseInt(document.getElementById('aCount').value)||20,pairs.length);
+    const chosen=shuffle(pairs).slice(0,cnt);
+    autoGenCache=[]; let seq=0;
+    for(const [A,B] of chosen){
+      const correctFrag=frag(A);
+      const others=shuffle(allSecs.filter(s=>s!==A&&s!==B)).slice(0,3).map(frag);
+      if(others.length<3) continue;
+      const order=shuffle([correctFrag,...others]);
+      const opts={}; let ans='A';
+      order.forEach((f,i)=>{opts[LETTERS[i]]=f;if(f===correctFrag)ans=LETTERS[i];});
+      if(new Set(Object.values(opts)).size!==4) continue;   // 选项去重，避免歧义
+      autoGenCache.push({
+        id:'GEN-PAIR-'+Date.now().toString(36)+'-'+(seq++),
+        t:'单选题',
+        s:'（成对易混辨析）下列属于「'+A.title+'」教材原文描述的是：',
+        o:opts,a:ans,d:'中',c:'理解',m:'专业知识',u:'二',un:'医学物理基础',
+        kpid:'BOOK-'+A.title.replace(/\s+/g,''),kp:A.title+' vs '+B.title,ch:'基础概念（绪论）',
+        ex:'【为什么对】教材原文（'+A.title+'）：'+A.body+'【为什么错】其余选项为「'+B.title+'」等其他概念的教材原文定义，概念边界不同。',
+        tr:'成对概念注意区分定义中的关键限定词与适用对象。',
+        bk:CUR_SEC,ref:{篇:'基础概念（绪论）',章:base.chapters[0].title,节:A.title,页:A.page||null},
+        hf:false,src:'教材原文生成'
+      });
+    }
+    if(!autoGenCache.length){document.getElementById('autoResult').innerHTML='<p class="muted">可用条目不足，请减少数量后重试</p>';return;}
+    showGenResult('教材原文（成对易混辨析）');
+  }
   function getPart0(){for(const p of TB.parts) if(p.idx===0) return p; return TB.parts[TB.parts.length-1];}
   function showGenResult(mode){
     const n=autoGenCache.length;
@@ -1576,6 +1685,7 @@ const App=(()=>{
   exportWrongPrint,setWrongTab,updateGoalForm,createGoal,completeGoal,deleteGoal,
     // ★ 双板块/教材/笔记/高频/自动出题
     setSection,getSection,openBook,toggleBookPart,bookLoadMore,searchBook,openNote,saveNote,delNote,searchNotesLive,closeModal,previewBookQuestions,startByKp,
-    setHotUnit,hotMore,practiceAllHot,renderTextbook,renderNotes,renderHot,renderAuto,genFromBank,genFromBook,importGenerated,practiceGenerated};
+    setHotUnit,hotMore,practiceAllHot,renderTextbook,renderNotes,renderHot,renderAuto,genFromBank,genFromBook,setBookMode,importGenerated,practiceGenerated,
+    toggleFav,removeFav,updateFavCount};
 })();
 document.addEventListener('DOMContentLoaded',App.init);

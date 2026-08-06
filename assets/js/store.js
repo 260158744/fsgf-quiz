@@ -27,6 +27,7 @@ const DB=(()=>{
     if(!cache.seen) cache.seen=[]; // 最近7天答过的qid
     if(!cache.notes) cache.notes=[]; // ★ 笔记：[{id,qid,text,tags,ts,upd}]
     if(!cache.imported) cache.imported=[]; // ★ 自动出题导入的题目
+    if(!cache.favorites) cache.favorites=[]; // ★ 收藏夹：qid 数组
     return cache;
   }
   function save(){
@@ -190,6 +191,12 @@ const DB=(()=>{
     // ★★ 自动出题导入 ★★
     addImported(q){const d=load();if(!d.imported.find(x=>x.id===q.id)){d.imported.push(q);save();return true}return false},
     getImported(){const d=load();return d.imported||[]},
-    clearImported(){const d=load();d.imported=[];save()}
+    clearImported(){const d=load();d.imported=[];save()},
+    // ★★ 收藏夹 ★★
+    toggleFav(qid){const d=load();const i=d.favorites.indexOf(qid);if(i>=0){d.favorites.splice(i,1);save();return false}d.favorites.push(qid);save();return true},
+    isFav(qid){const d=load();return d.favorites.indexOf(qid)>=0},
+    getFavs(){const d=load();return d.favorites.slice()},
+    removeFav(qid){const d=load();d.favorites=d.favorites.filter(x=>x!==qid);save()},
+    favCount(){const d=load();return d.favorites.length}
   };
 })();
