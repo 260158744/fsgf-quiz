@@ -1301,8 +1301,8 @@ const App=(()=>{
     const totalCh=TB.parts.reduce((a,p)=>a+(p.chapters||[]).length,0);
     const totalSec=TB.parts.reduce((a,p)=>a+(p.chapters||[]).reduce((b,c)=>b+(c.sections||[]).length,0),0);
     const totalLinked=Q.filter(q=>q.ref&&q.ref.篇).length;
-    let html=`<div class="page-head"><h1>📖 教材 · 放射学高级教程</h1>
-      <p>诊断各篇源自《放射学高级教程》指导用书；「技术篇」为影像技术考点笔记增补 · 共 ${TB.parts.length}篇 / ${totalCh}章 / ${totalSec}节 · 当前板块 ${totalLinked} 道题已关联到具体章节</p></div>`;
+    let html=`<div class="page-head"><h1>📖 教材 · 放射医学技术高级教程</h1>
+      <p>主教材《放射医学技术高级教程》(2017) + 补充《放射学高级教程》(2014) · 共 ${TB.parts.length}篇 / ${totalCh}章 / ${totalSec}节 · 当前板块 ${totalLinked} 道题已关联到具体章节</p></div>`;
     html+=`<div class="tbk-search"><input id="tbkSearch" placeholder="🔍 搜索章节名称（如：颅脑CT、乳腺、心脏）" oninput="App.searchBook(this.value)"></div>
       <div id="tbkSearchResult"></div>`;
     let pi=0;
