@@ -1133,6 +1133,14 @@ html[data-motion="off"] *{transition:none!important;animation:none!important}
 .tbk-search input{width:100%;padding:10px 12px;border:1px solid var(--border-2);border-radius:10px;background:var(--surface);color:var(--text);font-size:14px}
 .tbk-hit{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border)}
 .tbk-hit:last-child{border-bottom:none}
+.tbk-filters{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px}
+.tbk-filters .filter-chip{padding:6px 14px;font-size:13px;min-height:34px}
+.tbk-empty{font-size:12px;color:var(--text-3);font-style:italic;padding:4px 0}
+.tbk-snippet{font-size:12px;color:var(--text-2);line-height:1.6;margin-top:4px;padding:6px 8px;background:var(--surface-2);border-radius:6px;max-height:96px;overflow:auto;word-break:break-all}
+.tbk-snippet mark,.tbk-hl{background:rgba(255,208,0,.4);border-radius:3px;padding:0 2px;color:inherit}
+.book-inline{border:1px solid var(--border-2);border-radius:10px;padding:10px 12px;background:var(--surface);margin-top:2px}
+.book-inline-head{font-size:13px;font-weight:600;color:var(--primary-d);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.book-inline .tbk-body{max-height:340px}
 
 /* ===== PWA 安装引导 ===== */
 .install-banner{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:10px;background:var(--primary);color:#fff;padding:10px 12px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-width:92vw}

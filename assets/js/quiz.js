@@ -554,7 +554,9 @@ const Quiz=(()=>{
         <span class="tag">${esc(q.bk||'副高')}</span>
         ${q.hf?`<span class="tag tag-hot">🔥 高频考点</span>`:''}
       </div>
-      ${q.ref&&q.ref.篇?`<div class="explain-book">📖 教材出处：<b>${esc(q.ref.篇)}${q.ref.章?' › '+esc(q.ref.章):''}${q.ref.节?' › '+esc(q.ref.节):''}</b>${q.ref.页?' <span class="tbk-pg">P.'+q.ref.页+'</span>':''} <button class="btn btn-outline btn-sm" style="margin-left:6px" onclick="App.openBook(${JSON.stringify(q.ref).replace(/"/g,'&quot;')})">📖 查看教材原文</button></div>`:''}
+      ${q.ref&&q.ref.篇?`<div class="explain-book">📖 教材出处：<b>${esc(q.ref.篇)}${q.ref.章?' › '+esc(q.ref.章):''}${q.ref.节?' › '+esc(q.ref.节):''}</b>${q.ref.页?' <span class="tbk-pg">P.'+q.ref.页+'</span>':''} <button class="btn btn-outline btn-sm" style="margin-left:6px" onclick="App.openBook(${JSON.stringify(q.ref).replace(/"/g,'&quot;')})">📖 教材页打开</button></div>
+        <div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="App.showBookInline('${q.id}', ${JSON.stringify(q.ref).replace(/"/g,'&quot;')})">📖 教材原文（内联查看）</button></div>
+        <div id="book-inline-${q.id}" class="book-inline" style="display:none;margin-top:8px"></div>`:''}
       <div class="explain-actions">
         <button class="btn btn-ghost btn-sm" onclick="App.openLecture('${q.u}')">📚 查阅「${esc(q.un)}」单元讲义</button>
         <button class="btn btn-ghost btn-sm" onclick="App.openNote('${q.id}')">📝 记笔记${(window.DB&&DB.getNotesByQ&&DB.getNotesByQ(q.id).length)?' ('+DB.getNotesByQ(q.id).length+')':''}</button>

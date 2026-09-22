@@ -675,6 +675,33 @@ const App=(()=>{
       textbookFocus=null; textbookFocusSec=null;
     },150);
   }
+  // 按 ref 查找教材小节（含空节，供题内对照面板使用）
+  function bookLookup(ref){
+    if(!ref||!ref.篇) return null;
+    for(const part of TB.parts){
+      if(part.name!==ref.篇) continue;
+      for(const ch of (part.chapters||[])){
+        if(ref.章 && ch.title!==ref.章) continue;
+        if(ref.节){
+          for(const s of (ch.sections||[])){ if(s.title===ref.节) return {part:part.name,ch:ch.title,sec:s.title,page:s.page||ch.page,body:s.body||'',empty:!(s.body&&s.body.trim())}; }
+        } else {
+          for(const s of (ch.sections||[])){ if(s.body&&s.body.trim()) return {part:part.name,ch:ch.title,sec:s.title,page:s.page||ch.page,body:s.body,empty:false}; }
+        }
+      }
+    }
+    return null;
+  }
+  // 题内教材对照面板：内联展开该题 ref 指向的教材原文，无需跳页
+  function showBookInline(qid, ref){
+    const el=document.getElementById('book-inline-'+qid);
+    if(!el) return;
+    if(el.dataset.open==='1'){ el.style.display='none'; el.dataset.open='0'; return; }
+    const r=bookLookup(ref);
+    if(!r){ el.innerHTML=`<div class="tbk-empty">该题目未关联教材出处，或对应章节原文待补充。</div>`; }
+    else if(r.empty){ el.innerHTML=`<div class="book-inline-head">📖 ${esc(r.part)} › ${esc(r.ch)} › ${esc(r.sec)}${r.page?' <span class="tbk-pg">P.'+r.page+'</span>':''}</div><div class="tbk-empty">（该节原文待补充）</div>`; }
+    else { el.innerHTML=`<div class="book-inline-head">📖 ${esc(r.part)} › ${esc(r.ch)} › ${esc(r.sec)}${r.page?' <span class="tbk-pg">P.'+r.page+'</span>':''} <button class="btn btn-ghost btn-sm" onclick="App.openBook(${JSON.stringify(ref).replace(/"/g,'&quot;')})">在教材页打开 ➤</button></div><div class="tbk-body">${bookBody(r.body)}</div>`; }
+    el.style.display='block'; el.dataset.open='1';
+  }
 
   // ===== 错题本 =====
   let wrongFilter='all';let wrongTab='list';
@@ -1290,27 +1317,52 @@ const App=(()=>{
   let tbkOpenPart=null;   // 当前展开的篇（按需渲染，避免一次性输出 400KB HTML）
   let tbkPartLimit={};    // 每篇已展开的节数量上限（绪论篇 647 节，需分页避免单次输出 ~225KB）
   const TBK_PAGE=30;      // 单篇单次渲染节数上限（绪论含正文，30节≈12KB，加载更多后≈24KB，控制在 ~30KB 视图预算内）
+  let tbkBookFilter='all'; // 教材按书筛选：all/yjm/qj/tech
+  let tbkRef=null;         // 被题目引用的 篇|章|节 / 篇|章 键集合（缓存）
+  function tbkRefKeys(){
+    if(tbkRef) return tbkRef;
+    const sec=new Set(), ch=new Set();
+    for(const q of Q){ if(q.ref&&q.ref.篇){ const p=q.ref.篇,c=q.ref.章,s=q.ref.节; if(s) sec.add(p+'|'+c+'|'+s); if(c) ch.add(p+'|'+c); } }
+    tbkRef={sec,ch}; return tbkRef;
+  }
   function toggleBookPart(name){ tbkOpenPart = (tbkOpenPart===name)?null:name; if(tbkOpenPart!==name) delete tbkPartLimit[name]; render(); }
   function bookLoadMore(name){ tbkPartLimit[name]=(tbkPartLimit[name]||TBK_PAGE)+TBK_PAGE; render(); }
   function renderTextbook(){
     const linked=textbookLinked();
+    const ref=tbkRefKeys();
     tbkIndex={};
-    // 首次进入默认展开第一篇；从答题跳转过来则展开对应篇
+    // 切换筛选后若当前展开篇不在筛选范围内，则重置
+    if(tbkBookFilter!=='all'&&tbkOpenPart&&(TB.parts.find(p=>p.name===tbkOpenPart)||{}).book!==tbkBookFilter) tbkOpenPart=null;
     if(textbookFocus) tbkOpenPart=textbookFocus;
     else if(tbkOpenPart===null&&TB.parts.length) tbkOpenPart=TB.parts[0].name;
-    const totalCh=TB.parts.reduce((a,p)=>a+(p.chapters||[]).length,0);
-    const totalSec=TB.parts.reduce((a,p)=>a+(p.chapters||[]).reduce((b,c)=>b+(c.sections||[]).length,0),0);
+    const totalCh=TB.parts.reduce((a,p)=>a+((tbkBookFilter==='all'||p.book===tbkBookFilter)?(p.chapters||[]).length:0),0);
+    let totalSecV=0, totalEmptyHidden=0;
+    for(const p of TB.parts){
+      if(tbkBookFilter!=='all'&&p.book!==tbkBookFilter) continue;
+      for(const c of (p.chapters||[])) for(const s of (c.sections||[])){
+        const isEmpty=!(s.body&&s.body.trim());
+        const referenced=ref.sec.has(p.name+'|'+c.title+'|'+s.title)||ref.ch.has(p.name+'|'+c.title);
+        if(!isEmpty||referenced) totalSecV++; else totalEmptyHidden++;
+      }
+    }
     const totalLinked=Q.filter(q=>q.ref&&q.ref.篇).length;
     let html=`<div class="page-head"><h1>📖 教材 · 放射医学技术高级教程</h1>
-      <p>主教材《放射医学技术高级教程》(2017) + 补充《放射学高级教程》(2014) · 共 ${TB.parts.length}篇 / ${totalCh}章 / ${totalSec}节 · 当前板块 ${totalLinked} 道题已关联到具体章节</p></div>`;
-    html+=`<div class="tbk-search"><input id="tbkSearch" placeholder="🔍 搜索章节名称（如：颅脑CT、乳腺、心脏）" oninput="App.searchBook(this.value)"></div>
+      <p>主教材《放射医学技术高级教程》(2017) + 补充《放射学高级教程》(2014) + 技术篇扩展 · 共 ${TB.parts.length}篇 / ${totalCh}章 / ${totalSecV}节（已收录正文）${totalEmptyHidden?` · ${totalEmptyHidden} 节待补充已隐藏`:''} · 当前板块 ${totalLinked} 道题已关联</p></div>`;
+    html+=`<div class="tbk-filters">
+      <button class="filter-chip ${tbkBookFilter==='all'?'active':''}" onclick="App.setTbkBook('all')">全部</button>
+      <button class="filter-chip ${tbkBookFilter==='yjm'?'active':''}" onclick="App.setTbkBook('yjm')">余建明·放射技术</button>
+      <button class="filter-chip ${tbkBookFilter==='qj'?'active':''}" onclick="App.setTbkBook('qj')">祁吉·放射学</button>
+      <button class="filter-chip ${tbkBookFilter==='tech'?'active':''}" onclick="App.setTbkBook('tech')">技术篇(扩展)</button>
+    </div>`;
+    html+=`<div class="tbk-search"><input id="tbkSearch" placeholder="🔍 搜章节名称或正文关键词（如：颅脑CT、乳腺、造影剂、脑梗死）" oninput="App.searchBook(this.value)"></div>
       <div id="tbkSearchResult"></div>`;
     let pi=0;
     for(const part of TB.parts){
+      if(tbkBookFilter!=='all'&&part.book!==tbkBookFilter) continue;
       pi++;
       const open = tbkOpenPart===part.name;
       const chN=(part.chapters||[]).length;
-      const secN=(part.chapters||[]).reduce((b,c)=>b+(c.sections||[]).length,0);
+      const secN=(part.chapters||[]).reduce((b,c)=>b+(c.sections||[]).filter(s=>{const e=!(s.body&&s.body.trim());const r=ref.sec.has(part.name+'|'+c.title+'|'+s.title)||ref.ch.has(part.name+'|'+c.title);return !e||r;}).length,0);
       html+=`<div class="tbk-part${open?' active':''}">
         <h3 class="tbk-part-h" onclick="App.toggleBookPart(${JSON.stringify(part.name).replace(/"/g,'&quot;')})">
           <span>${open?'▾':'▸'} 第${pi}篇 · ${esc(part.name)}</span>
@@ -1331,17 +1383,20 @@ const App=(()=>{
           let chapHtml=`<div class="tbk-chap"><h4>${esc(ch.title)}${ch.page?' <span class="tbk-pg">P.'+ch.page+'</span>':''}</h4>`;
           let chVisible=false;
           for(const s of (ch.sections||[])){
+            const key=part.name+'|'+ch.title+'|'+s.title;
+            const isEmpty=!(s.body&&s.body.trim());
+            const referenced=ref.sec.has(key)||ref.ch.has(part.name+'|'+ch.title);
+            if(isEmpty && !referenced) continue; // 隐藏空节（被引用的空节保留并标注待补充）
             gi++;
             if(gi>shown){ moreLeft=true; continue; }
             chVisible=true; anyVisible=true;
             const sid='tbk-'+pi+'-'+gi;
             tbkIndex[s.title]=sid;
-            const key=part.name+'|'+ch.title+'|'+s.title;
             const n=(linked[key]||[]).length||(linked[part.name]||[]).length;
             const flash = (textbookFocusSec&&textbookFocusSec===s.title)?' tbk-flash':'';
             chapHtml+=`<div class="tbk-sec${flash}" id="${sid}">
               <div class="tbk-sec-h"><b>${esc(s.title)}</b>${s.page?' <span class="tbk-pg">P.'+s.page+'</span>':''} ${n?`<span class="tbk-count">${n}题关联</span>`:''}</div>
-              ${s.body?`<div class="tbk-body">${bookBody(s.body)}</div>`:''}
+              ${s.body?`<div class="tbk-body">${bookBody(s.body)}</div>`:`<div class="tbk-empty">（该节原文待补充）</div>`}
               ${n?`<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="App.previewBookQuestions(${JSON.stringify(key).replace(/"/g,'&quot;')})">📝 查看 ${n} 道关联题目</button>`:''}
             </div>`;
           }
@@ -1357,27 +1412,39 @@ const App=(()=>{
     }
     return html;
   }
+  function setTbkBook(f){ tbkBookFilter=f; tbkOpenPart=null; if(textbookFocus){textbookFocus=null;textbookFocusSec=null;} render(); }
   function searchBook(kw){
     const box=document.getElementById('tbkSearchResult'); if(!box)return;
     kw=(kw||'').trim();
     if(kw.length<1){box.innerHTML='';return;}
     const linked=textbookLinked();
-    const hits=[];
+    const ref=tbkRefKeys();
+    const hits=[]; const MAX=80;
     for(const part of TB.parts){
+      if(tbkBookFilter!=='all'&&part.book!==tbkBookFilter) continue;
       for(const ch of (part.chapters||[])){
         for(const s of (ch.sections||[])){
-          if(s.title.includes(kw)||ch.title.includes(kw)){
-            const key=part.name+'|'+ch.title+'|'+s.title;
-            hits.push({part:part.name,ch:ch.title,sec:s.title,page:s.page||ch.page,n:(linked[key]||[]).length||(linked[part.name]||[]).length,key});
-          }
-          if(hits.length>=60)break;
+          if(!(s.body&&s.body.trim())) continue; // 仅检索已收录正文
+          let hp=-1;
+          if(s.title.includes(kw)) hp=0; else { const bi=s.body.indexOf(kw); if(bi>=0) hp=bi; }
+          if(hp<0) continue;
+          const key=part.name+'|'+ch.title+'|'+s.title;
+          const n=(linked[key]||[]).length||(linked[part.name]||[]).length;
+          let snip = hp===0 ? s.body.slice(0,90) : s.body.slice(Math.max(0,hp-30), hp+50);
+          const kwEsc=kw.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+          const snipHl=esc(snip).replace(new RegExp(kwEsc,'g'),'<mark class="tbk-hl">'+kw+'</mark>');
+          hits.push({part:part.name,ch:ch.title,sec:s.title,page:s.page||ch.page,n,snipHl,key});
+          if(hits.length>=MAX)break;
         }
+        if(hits.length>=MAX)break;
       }
+      if(hits.length>=MAX)break;
     }
-    if(!hits.length){box.innerHTML=`<div class="card muted" style="padding:12px">未找到含「${esc(kw)}」的章节</div>`;return;}
-    box.innerHTML=`<div class="card"><b>🔍 命中 ${hits.length} 个章节</b>`+hits.map(h=>
+    if(!hits.length){box.innerHTML=`<div class="card muted" style="padding:12px">未找到含「${esc(kw)}」的章节或正文</div>`;return;}
+    box.innerHTML=`<div class="card"><b>🔍 命中 ${hits.length} 个章节（正文/标题）</b>`+hits.map(h=>
       `<div class="tbk-hit">
          <div><b>${esc(h.sec)}</b> <span class="muted" style="font-size:12px">${esc(h.part)} › ${esc(h.ch)}</span>${h.page?' <span class="tbk-pg">P.'+h.page+'</span>':''}</div>
+         <div class="tbk-snippet">${h.snipHl}…</div>
          ${h.n?`<button class="btn btn-outline btn-sm" onclick="App.previewBookQuestions(${JSON.stringify(h.key).replace(/"/g,'&quot;')})">${h.n} 题</button>`:'<span class="muted" style="font-size:12px">暂无关联题</span>'}
        </div>`).join('')+`</div>`;
   }
@@ -1684,7 +1751,7 @@ const App=(()=>{
   setFontSize,setBgTone,toggleShowTimer,toggleReduceMotion,toggleShuffleOpts,toggleBreathingGuide,
   exportWrongPrint,setWrongTab,updateGoalForm,createGoal,completeGoal,deleteGoal,
     // ★ 双板块/教材/笔记/高频/自动出题
-    setSection,getSection,openBook,toggleBookPart,bookLoadMore,searchBook,openNote,saveNote,delNote,searchNotesLive,closeModal,previewBookQuestions,startByKp,
+    setSection,getSection,openBook,toggleBookPart,bookLoadMore,searchBook,openNote,saveNote,delNote,searchNotesLive,closeModal,previewBookQuestions,startByKp,setTbkBook,bookLookup,showBookInline,
     setHotUnit,hotMore,practiceAllHot,renderTextbook,renderNotes,renderHot,renderAuto,genFromBank,genFromBook,setBookMode,importGenerated,practiceGenerated,
     toggleFav,removeFav,updateFavCount};
 })();
