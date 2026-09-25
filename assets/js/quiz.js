@@ -5,20 +5,29 @@ const Quiz=(()=>{
   let session=null; // {mode,queue,idx,answers,streak,maxStreak,startTime,typeFilter,unitFilter}
   let _offlineFallback=false; // 离线降级标志
 
-  // ★ 动态读取：因为 questions_offline.js 是 defer 加载，初始化时还未执行
-  // 所以不能用 const 捕获，必须每次动态读 window.QUESTIONS_OFFLINE
+  // ★ 动态读取：因为 questions_offline.js 是 defer 加载，初始化时还未执行。
+  //   v3 起离线库为 window.OFFLINE_BANK（{id:答案} 对象映射），不再是数组，
+  //   归一化逻辑统一收敛到 DB.getOfflineBank()，与 exam.js 共用同一口径。
   function _getOffline(){
-    return window.QUESTIONS_OFFLINE||null;
+    if(typeof DB!=='undefined' && DB.getOfflineBank) return DB.getOfflineBank();
+    // 兜底：DB 不可用时直接读全局（兼容对象映射与旧版数组两种格式）
+    const W=window, bank=W.OFFLINE_BANK;
+    if(bank && typeof bank==='object' && !Array.isArray(bank)) return bank;
+    const arr=Array.isArray(bank)?bank:(Array.isArray(W.QUESTIONS_OFFLINE_ALL)?W.QUESTIONS_OFFLINE_ALL:(Array.isArray(W.QUESTIONS_OFFLINE)?W.QUESTIONS_OFFLINE:null));
+    if(!arr) return null;
+    const m={}; for(const x of arr){ if(x && x.id) m[x.id]=x.a; }
+    return m;
   }
   function findOfflineAnswer(qid){
-    const QO=_getOffline();
-    if(!QO) return null;
-    const q=QO.find(x=>x.id===qid);
-    return q?q.a:null;
+    const bank=_getOffline();
+    if(!bank) return null;
+    return bank[qid]||null;
   }
   function isOfflineAvailable(){
-    const QO=_getOffline();
-    return !!QO && QO.length>0;
+    const bank=_getOffline();
+    if(!bank) return false;
+    for(const k in bank) return true;
+    return false;
   }
 
   // ===== 选题算法 =====
@@ -998,3 +1007,7 @@ const Quiz=(()=>{
     showBreathingGuide,encourageText,markConfused,askAbout,tryFeynman,submitFeynman,
     showRestPanel,_restTimer,_resume,renderTools,toggleTTS,toggleFav};
 })();
+
+// ★ 顶层 const 不会成为 window 属性；显式挂载，
+//   供其它模块的 `window.Quiz && ...` 兼容判断与内联 onclick 使用。
+window.Quiz=Quiz;

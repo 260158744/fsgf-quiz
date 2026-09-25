@@ -4,6 +4,7 @@ const DB=(()=>{
   const decay=lambda=>Math.exp(-Math.log(2)/30*lambda);
   let cache=null;
   let cacheUid=null;
+  let _offlineBank=null;   // 离线答案库归一化缓存（{id:答案}）
   function load(){
     const uid=User.current();
     // 用户切换后强制重新加载
@@ -188,6 +189,37 @@ const DB=(()=>{
       return d.notes.filter(n=>(n.text||'').toLowerCase().includes(k)||(n.tags||[]).some(t=>t.toLowerCase().includes(k))||(n.qid||'').toLowerCase().includes(k))
                     .sort((a,b)=>b.upd-a.upd);
     },
+    // ★★ 离线答案库（统一访问层）★★
+    // questions_offline.js 由构建脚本生成，格式曾发生变更：
+    //   v3 起：window.OFFLINE_BANK = { "U01-001":"C", ... }   ← id→答案 对象映射
+    //   旧版  ：window.QUESTIONS_OFFLINE / QUESTIONS_OFFLINE_ALL = [{id,a}, ...]
+    // 此处统一归一化为 { id: 答案 }，答题目(quiz.js)与模拟考试(exam.js)共用同一口径，
+    // 避免两边各写一套判断而出现"一边能判分、一边判不了"的问题。
+    // 注意：questions_offline.js 为 defer 加载，首次调用时可能尚未执行，
+    //      因此只在拿到非空结果时缓存，避免把 null 永久缓存下来。
+    getOfflineBank(){
+      if(_offlineBank) return _offlineBank;
+      const W=(typeof window!=='undefined')?window:{};
+      let m=null;
+      const bank=W.OFFLINE_BANK;
+      if(bank && typeof bank==='object' && !Array.isArray(bank)){
+        m=bank;
+      }else{
+        let arr=null;
+        if(Array.isArray(bank)) arr=bank;
+        else if(Array.isArray(W.QUESTIONS_OFFLINE_ALL)) arr=W.QUESTIONS_OFFLINE_ALL;
+        else if(Array.isArray(W.QUESTIONS_OFFLINE)) arr=W.QUESTIONS_OFFLINE;
+        if(arr){
+          m={};
+          for(const x of arr){ if(x && x.id) m[x.id]=x.a; }
+        }
+      }
+      if(m){
+        // 空对象视为"尚未就绪"，不缓存
+        for(const k in m){ _offlineBank=m; break; }
+      }
+      return m;
+    },
     // ★★ 自动出题导入 ★★
     addImported(q){const d=load();if(!d.imported.find(x=>x.id===q.id)){d.imported.push(q);save();return true}return false},
     getImported(){const d=load();return d.imported||[]},
@@ -200,3 +232,6 @@ const DB=(()=>{
     favCount(){const d=load();return d.favorites.length}
   };
 })();
+// ★ 顶层 const 不会成为 window 属性，需显式挂载，
+//   否则其它模块里的 `window.DB && ...` 判断恒为假（笔记计数等静默失效）。
+window.DB=DB;

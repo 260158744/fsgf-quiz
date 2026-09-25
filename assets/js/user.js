@@ -74,3 +74,7 @@ const User=(()=>{
 
   return {list,current,setCurrent,get,getName,create,remove,switchTo,dataKey,tokenKey,sessionKey};
 })();
+
+// ★ 顶层 const 不会成为 window 属性；显式挂载，
+//   供其它模块的 `window.User && ...` 兼容判断与内联 onclick 使用。
+window.User=User;

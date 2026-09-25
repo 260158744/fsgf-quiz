@@ -1,6 +1,6 @@
 /* ===== 模拟考试模块 · 组卷 / 计时 / 交卷 / 薄弱章节报告 =====
  * 纯逻辑(assemble/grade/resolveAnswer)与DOM渲染分离，便于无头自测。
- * 判分答案来源：离线镜像 QUESTIONS_OFFLINE_ALL → 题面内嵌 a(IMA题) → 均为本地，无需后端。
+ * 判分答案来源：离线答案库 OFFLINE_BANK（经 DB.getOfflineBank() 归一化） → 题面内嵌 a(IMA题) → 均为本地，无需后端。
  */
 const Exam = (() => {
   const Q = () => (window.QUESTIONS || []);
@@ -10,11 +10,16 @@ const Exam = (() => {
 
   function buildOfflineMap() {
     if (_offlineMap) return _offlineMap;
-    const arr = window.QUESTIONS_OFFLINE_ALL || window.QUESTIONS_OFFLINE || [];
-    const m = {};
-    for (const x of arr) if (x && x.id) m[x.id] = x.a;
-    _offlineMap = m;
-    return m;
+    // ★ 统一走 DB.getOfflineBank()：兼容 v3 的 {id:答案} 对象映射(OFFLINE_BANK)
+    //   与旧版 [{id,a}] 数组(QUESTIONS_OFFLINE / QUESTIONS_OFFLINE_ALL)。
+    let bank = (typeof DB !== 'undefined' && DB.getOfflineBank) ? DB.getOfflineBank() : null;
+    if (!bank) {
+      const cand = window.OFFLINE_BANK;
+      if (cand && typeof cand === 'object' && !Array.isArray(cand)) bank = cand;
+    }
+    if (!bank) return {};       // 未就绪时不缓存，等下次再取
+    _offlineMap = bank;
+    return bank;
   }
   // ★ 统一答案解析：离线镜像优先，其次题面内嵌 a(IMA题)
   function resolveAnswer(q) {
@@ -367,3 +372,7 @@ const Exam = (() => {
     _state: () => state
   };
 })();
+
+// ★ 顶层 const 不会成为 window 属性；显式挂载，
+//   供其它模块的 `window.Exam && ...` 兼容判断与内联 onclick 使用。
+window.Exam=Exam;

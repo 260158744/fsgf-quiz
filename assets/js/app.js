@@ -1756,3 +1756,7 @@ const App=(()=>{
     toggleFav,removeFav,updateFavCount};
 })();
 document.addEventListener('DOMContentLoaded',App.init);
+
+// ★ 顶层 const 不会成为 window 属性；显式挂载，
+//   供其它模块的 `window.App && ...` 兼容判断与内联 onclick 使用。
+window.App=App;

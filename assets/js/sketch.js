@@ -159,3 +159,7 @@ const Sketch=(()=>{
 
   return {init,show,hide,toggle,undo,clear,setColor,setWidth,saveStrokes,loadStrokes,resize};
 })();
+
+// ★ 顶层 const 不会成为 window 属性；显式挂载，
+//   供其它模块的 `window.Sketch && ...` 兼容判断与内联 onclick 使用。
+window.Sketch=Sketch;

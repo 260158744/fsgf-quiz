@@ -78,3 +78,7 @@ const Gamify=(()=>{
   }
   return {level,xpFor,BADGES,checkBadges};
 })();
+
+// ★ 顶层 const 不会成为 window 属性；显式挂载，
+//   供其它模块的 `window.Gamify && ...` 兼容判断与内联 onclick 使用。
+window.Gamify=Gamify;
